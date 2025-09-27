@@ -74,14 +74,14 @@ def get_db_connection():
 async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    await asyncio.sleep(2)
-    await update.message.reply_text("Добавь бота в админы канала/чата. Укажи username (с @) или ID.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
-    context.user_data['message_ids'] = [update.message.message_id]
+    await asyncio.sleep(1)
+    msg = await update.message.reply_text("Добавь бота в админы канала/чата. Укажи username (с @) или ID.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
+    context.user_data['message_ids'] = [msg.message_id]
     return ASK_CHANNEL
 
 async def ask_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
     if update.callback_query and update.callback_query.data == 'cancel':
         await update.callback_query.message.reply_text("Добавление канала отменено.")
         await clean_chat(update, context)
@@ -123,24 +123,19 @@ async def ask_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await context.bot.send_chat_action(chat_id=query.message.chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
     mode = query.data
     if mode == 'cancel':
         await query.message.reply_text("Добавление канала отменено.")
         await clean_chat(update, context)
         return ConversationHandler.END
     if mode == 'back':
-        keyboard = [
-            [InlineKeyboardButton("Все радио-шоу", callback_data='all_shows')],
-            [InlineKeyboardButton("Ежедневный пост в 16:20 (или свое время)", callback_data='daily_info')],
-            [InlineKeyboardButton("Шоу с ключевым словом", callback_data='keyword_show')],
-            [InlineKeyboardButton("Без постов только тест", callback_data='no_posts')],
-            [InlineKeyboardButton("Назад", callback_data='back')],
-            [InlineKeyboardButton("Отмена", callback_data='cancel')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.edit_text("Выбери режим постов:", reply_markup=reply_markup)
-        return ASK_MODE
+        await query.message.delete()
+        await context.bot.send_chat_action(chat_id=query.message.chat_id, action=ChatAction.TYPING)
+        await asyncio.sleep(1)
+        msg = await query.message.reply_text("Добавь бота в админы канала/чата. Укажи username (с @) или ID.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
+        context.user_data['message_ids'].append(msg.message_id)
+        return ASK_CHANNEL
     context.user_data['post_mode'] = mode
     context.user_data['message_ids'].append(query.message.message_id)
     if mode in ['daily_info', 'keyword_show']:
@@ -160,7 +155,7 @@ async def ask_confirm_default(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     await context.bot.send_chat_action(chat_id=query.message.chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
     context.user_data['message_ids'].append(query.message.message_id)
     if query.data == 'cancel':
         await query.message.reply_text("Добавление канала отменено.")
@@ -175,7 +170,7 @@ async def ask_confirm_default(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def ask_extra(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
     extra = update.message.text.strip()
     if context.user_data['post_mode'] == 'daily_info':
         if not re.match(r'^\d{2}:\d{2}$', extra):
@@ -205,10 +200,8 @@ async def confirm_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
                    (user_id, channel_id, mode, extra, channel_title, user_username))
     conn.commit()
     conn.close()
-    if update.callback_query:
-        await update.callback_query.message.reply_text(f"Настройки для канала '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
-    else:
-        await update.message.reply_text(f"Настройки для канала '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
+    msg = await update.message.reply_text(f"Настройки для канала '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
+    context.user_data['final_msg_id'] = msg.message_id  # Сохраняем ID финального поста, чтобы не удалять
     keyboard = [
         [InlineKeyboardButton("Очистить чат", callback_data='clean_chat')],
         [InlineKeyboardButton("Отставить", callback_data='keep_chat')]
@@ -219,24 +212,23 @@ async def confirm_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_CLEAN
 
 async def clean_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    final_msg_id = context.user_data.get('final_msg_id')
     for msg_id in context.user_data.get('message_ids', []):
-        try:
-            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=msg_id)
-        except:
-            pass
+        if msg_id != final_msg_id:  # Не удаляем финальный пост
+            try:
+                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=msg_id)
+            except:
+                pass
     context.user_data.clear()
 
 async def handle_clean_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == 'clean_chat':
-        await query.message.reply_text("Чат очищен.")
-        await asyncio.sleep(5)
         await clean_chat(update, context)
     else:
-        await query.message.reply_text("Чат оставлен без изменений.")
-        await clean_chat(update, context)  # Удаляем только последнее сообщение
-        context.user_data['message_ids'] = []
+        await context.bot.delete_message(chat_id=query.message.chat_id, message_id=query.message.message_id)
+        context.user_data.clear()
     return ConversationHandler.END
 
 async def my_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -286,7 +278,7 @@ async def ask_edit_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await context.bot.send_chat_action(chat_id=query.message.chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
     channel_id = int(query.data)
     context.user_data['channel_id'] = channel_id
     context.user_data['message_ids'].append(query.message.message_id)
@@ -339,7 +331,7 @@ async def ask_test_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await context.bot.send_chat_action(chat_id=query.message.chat_id, action=ChatAction.TYPING)
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
     channel_id = int(query.data)
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
@@ -495,7 +487,7 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                             if mode == 'all_shows' and new_filename != announced_tracks.get(ch_id):
                                 await send_podcast_post(context, ch_id, file_path, caption, reply_markup)
                                 announced_tracks[ch_id] = new_filename
-                            elif mode == 'keyword_show' and extra and extra.lower() in new_title.lower() and new_filename != announced_tracks.get(ch_id):
+                            elif mode == 'keyword_show' and extra and extra.lower() in (new_title.lower() + new_artist.lower()) and new_filename != announced_tracks.get(ch_id):
                                 await send_podcast_post(context, ch_id, file_path, caption, reply_markup)
                                 announced_tracks[ch_id] = new_filename
                     last_track = new_filename
@@ -514,6 +506,28 @@ async def send_podcast_post(context, channel_id, file_path, caption, reply_marku
             await context.bot.send_photo(channel_id, photo="https://vtrnk.online/images/placeholder2.png", caption=caption, reply_markup=reply_markup)
     except Exception as e:
         logger.error(f"Error posting to {channel_id}: {e}")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "Привет! Я бот для управления постами в каналах для VTRNK Radio.\n\n"
+        "Сначала добавь меня (@drum_n_bot) в администраторы канала с правами на постинг сообщений.\n\n"
+        "Основные команды:\n"
+        "/add - Добавляет канал и настраивает режим постов.\n"
+        "/edit - Изменяет настройки существующего канала.\n"
+        "/my_channels - Показывает список твоих каналов с настройками.\n"
+        "/remove <channel_id> - Удаляет канал из базы.\n"
+        "/test - Отправляет тестовый пост в канал.\n"
+        "/radio - Показывает текущий трек в эфире.\n"
+        "/start - Запускает бота (с параметром launch_radio - открывает мини-апп для прослушивания).\n"
+        "/help - Это меню.\n\n"
+        "Режимы постов:\n"
+        "- Все радио-шоу: Пост о каждом новом шоу.\n"
+        "- Ежедневный пост: Пост о текущем треке в указанное время.\n"
+        "- Шоу с ключевым словом: Пост, если слово есть в названии или авторе шоу (без учета регистра).\n"
+        "- Без постов только тест: Только ручной тест поста, без автоматизации.\n\n"
+        "Для вопросов: пиши разработчику."
+    )
+    await update.message.reply_text(help_text)
 
 def main():
     logger.info("Starting drum_n_bot")
@@ -559,6 +573,7 @@ def main():
     application.add_handler(CallbackQueryHandler(close_my_channels, pattern='close_my_channels'))
     application.add_handler(CommandHandler("remove", remove_channel))
     application.add_handler(ChatMemberHandler(handle_member_update, ChatMemberHandler.CHAT_MEMBER))
+    application.add_handler(CommandHandler("help", help_command))
     application.job_queue.run_repeating(monitor_podcast, interval=60, first=0)
     conn = get_db_connection()
     cursor = conn.cursor()
