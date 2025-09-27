@@ -45,6 +45,7 @@ DB_PATH = '/home/beasty197/projects/vtrnk_radio/data/channels.db'
 ASK_CHANNEL, ASK_MODE, ASK_EXTRA, ASK_CONFIRM_DEFAULT, CONFIRM, ASK_CLEAN = range(6)
 ASK_TEST_CHANNEL = 1
 ASK_EDIT_CHANNEL = 1
+ASK_DUPLICATE = 1
 
 def init_db():
     try:
@@ -70,6 +71,90 @@ def init_db():
 
 def get_db_connection():
     return sqlite3.connect(DB_PATH)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args and context.args[0] == 'launch_radio':
+        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", web_app={"url": "https://vtrnk.online/telegram-mini-app.html"})]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Запускаем VTRNK Radio!", reply_markup=reply_markup)
+        logger.info("Launched Mini App from /start launch_radio")
+
+async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+            logger.info("Fetching track data for /radio")
+            async with session.get("https://vtrnk.online/track") as track_response:
+                track_data = await track_response.json()
+                logger.info(f"Track response: {track_data}")
+                artist = track_data[1][1] if track_data and len(track_data) > 1 else "VTRNK"
+                title = track_data[2][1] if track_data and len(track_data) > 2 else "Unknown Track"
+            async with session.get("https://vtrnk.online/get_cover_path") as cover_response:
+                cover_data = await cover_response.json()
+                cover_path = cover_data.get("cover_path", "/images/placeholder2.png")
+                file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
+                logger.info(f"Local file path for /radio: {file_path}")
+        is_group = update.message.chat.type in ['group', 'supergroup']
+        button_type = {'url': 'https://t.me/drum_n_bot'} if is_group else {'web_app': {'url': 'https://vtrnk.online/telegram-mini-app.html'}}
+        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", **button_type)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            logger.info(f"Sending cover as file: {file_path}")
+            with open(file_path, 'rb') as photo:
+                caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
+                logger.info(f"Sending /radio response: {caption}")
+                await update.message.reply_photo(
+                    photo=photo,
+                    caption=caption,
+                    reply_markup=reply_markup
+                )
+        else:
+            logger.error(f"Cover file not found: {file_path}")
+            cover_url = "https://vtrnk.online/images/placeholder2.png"
+            logger.info(f"Falling back to default cover URL: {cover_url}")
+            caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
+            await update.message.reply_photo(
+                photo=cover_url,
+                caption=caption,
+                reply_markup=reply_markup
+            )
+        logger.info(f"Sent /radio response: {title} by {artist}")
+    except Exception as e:
+        logger.error(f"Error in /radio: {e}")
+        await update.message.reply_text("Не удалось получить информацию о текущем треке. Попробуйте позже!")
+
+async def handle_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_member: ChatMemberUpdated = update.chat_member
+    if chat_member.user.id == context.bot.id and chat_member.new_chat_member.status in ['left', 'kicked']:
+        channel_id = chat_member.chat.id
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM users_channels WHERE channel_id = ?", (channel_id,))
+        conn.commit()
+        conn.close()
+        logger.info(f"Bot removed from channel {channel_id}, deleted from DB.")
+
+async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
+    channel_id = context.job.data['channel_id']
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://vtrnk.online/track") as resp:
+                track_data = await resp.json()
+                artist = track_data[1][1] if len(track_data) > 1 else "VTRNK"
+                title = track_data[2][1] if len(track_data) > 2 else "Unknown"
+            async with session.get("https://vtrnk.online/get_cover_path") as resp:
+                cover_data = await resp.json()
+                cover_path = cover_data.get("cover_path", "/images/placeholder2.png")
+                file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
+        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", url="https://t.me/drum_n_bot")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as photo:
+                await context.bot.send_photo(channel_id, photo=photo, caption=caption, reply_markup=reply_markup)
+        else:
+            await context.bot.send_photo(channel_id, photo="https://vtrnk.online/images/placeholder2.png", caption=caption, reply_markup=reply_markup)
+    except Exception as e:
+        logger.error(f"Error in daily post: {e}")
 
 async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
     last_track = None
@@ -146,21 +231,44 @@ async def ask_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.delete_message(chat_id=update.callback_query.message.chat_id, message_id=msg.message_id)
         await clean_chat(update, context)
         return ConversationHandler.END
-    channel = update.message.text.strip()
+    channel_input = update.message.text.strip()
     context.user_data['message_ids'].append(update.message.message_id)
     try:
+        # Парсинг ввода
+        if 'https://t.me/' in channel_input:
+            channel = channel_input.split('https://t.me/')[1].split('/')[0]
+        elif 'ID:' in channel_input:
+            channel = re.search(r'-?\d+', channel_input).group()
+        else:
+            channel = channel_input
+
         if channel.startswith('@'):
+            await asyncio.sleep(0.5)  # Задержка для избежания rate limit
             chat = await context.bot.get_chat(channel)
             channel_id = chat.id
         else:
             channel_id = int(channel)
         # Проверка админства бота
+        await asyncio.sleep(0.5)  # Задержка для избежания rate limit
+        chat = await context.bot.get_chat(channel_id)
         member = await context.bot.get_chat_member(channel_id, context.bot.id)
-        if not member.can_post_messages or member.status != 'administrator':
-            await update.message.reply_text("Бот @drum_n_bot не админ в этом канале или не может постить. Добавь права и попробуй заново.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
-            await clean_chat(update, context)
-            return ConversationHandler.END
+        if member.status != 'administrator' or (hasattr(member, 'can_post_messages') and not member.can_post_messages):
+            keyboard = [[InlineKeyboardButton("Пропустить проверку", callback_data='skip_check'), InlineKeyboardButton("Отмена", callback_data='cancel')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Бот @drum_n_bot не админ в этом канале/чате или не может постить. Добавь права и попробуй заново. Или пропустить?", reply_markup=reply_markup)
+            return ASK_DUPLICATE  # Переходим к новому состоянию для пропуска
         context.user_data['channel_id'] = channel_id
+        # Проверка дубликата
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM users_channels WHERE channel_id = ?", (channel_id,))
+        existing = cursor.fetchone()
+        conn.close()
+        if existing:
+            keyboard = [[InlineKeyboardButton("Продолжить", callback_data='continue_dup'), InlineKeyboardButton("Отмена", callback_data='cancel')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Этот канал/чат уже настроен другим пользователем. Продолжить настройку?")
+            return ASK_DUPLICATE
         keyboard = [
             [InlineKeyboardButton("Все радио-шоу", callback_data='all_shows')],
             [InlineKeyboardButton("Ежедневный пост в 16:20 (или свое время)", callback_data='daily_info')],
@@ -175,9 +283,33 @@ async def ask_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_MODE
     except Exception as e:
         logger.error(f"Error getting channel: {e}")
-        await update.message.reply_text("Не удалось найти канал. Проверь username или ID и убедись, что @drum_n_bot добавлен в админы.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
+        await update.message.reply_text("Не удалось найти канал/чат. Проверь username или ID и убедись, что @drum_n_bot добавлен в админы.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
         await clean_chat(update, context)
         return ConversationHandler.END
+
+async def ask_duplicate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == 'cancel':
+        msg = await query.message.reply_text("Добавление канала отменено.")
+        await asyncio.sleep(5)
+        await context.bot.delete_message(chat_id=query.message.chat_id, message_id=msg.message_id)
+        await clean_chat(update, context)
+        return ConversationHandler.END
+    if query.data == 'skip_check' or query.data == 'continue_dup':
+        keyboard = [
+            [InlineKeyboardButton("Все радио-шоу", callback_data='all_shows')],
+            [InlineKeyboardButton("Ежедневный пост в 16:20 (или свое время)", callback_data='daily_info')],
+            [InlineKeyboardButton("Шоу с ключевым словом", callback_data='keyword_show')],
+            [InlineKeyboardButton("Без постов, только тест", callback_data='no_posts')],
+            [InlineKeyboardButton("Назад", callback_data='back')],
+            [InlineKeyboardButton("Отмена", callback_data='cancel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        msg = await query.message.reply_text("Выбери режим постов:", reply_markup=reply_markup)
+        context.user_data['message_ids'].append(msg.message_id)
+        return ASK_MODE
+    return ASK_DUPLICATE
 
 async def ask_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -336,9 +468,9 @@ async def confirm_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     if update.callback_query:
-        msg = await update.callback_query.message.reply_text(f"Настройки для канала '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
+        msg = await update.callback_query.message.reply_text(f"Настройки для канала/чата '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
     else:
-        msg = await update.message.reply_text(f"Настройки для канала '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
+        msg = await update.message.reply_text(f"Настройки для канала/чата '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
     context.user_data['final_msg_id'] = msg.message_id  # Сохраняем ID финального поста
     keyboard = [
         [InlineKeyboardButton("Очистить чат", callback_data='clean_chat')],
@@ -515,90 +647,6 @@ async def ask_test_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Не удалось отправить тестовый пост. Попробуйте позже!")
     return ConversationHandler.END
 
-async def handle_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_member: ChatMemberUpdated = update.chat_member
-    if chat_member.user.id == context.bot.id and chat_member.new_chat_member.status in ['left', 'kicked']:
-        channel_id = chat_member.chat.id
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM users_channels WHERE channel_id = ?", (channel_id,))
-        conn.commit()
-        conn.close()
-        logger.info(f"Bot removed from channel {channel_id}, deleted from DB.")
-
-async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
-    channel_id = context.job.data['channel_id']
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://vtrnk.online/track") as resp:
-                track_data = await resp.json()
-                artist = track_data[1][1] if len(track_data) > 1 else "VTRNK"
-                title = track_data[2][1] if len(track_data) > 2 else "Unknown"
-            async with session.get("https://vtrnk.online/get_cover_path") as resp:
-                cover_data = await resp.json()
-                cover_path = cover_data.get("cover_path", "/images/placeholder2.png")
-                file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
-        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", url="https://t.me/drum_n_bot")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
-        if os.path.exists(file_path):
-            with open(file_path, 'rb') as photo:
-                await context.bot.send_photo(channel_id, photo=photo, caption=caption, reply_markup=reply_markup)
-        else:
-            await context.bot.send_photo(channel_id, photo="https://vtrnk.online/images/placeholder2.png", caption=caption, reply_markup=reply_markup)
-    except Exception as e:
-        logger.error(f"Error in daily post: {e}")
-
-async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
-            logger.info("Fetching track data for /radio")
-            async with session.get("https://vtrnk.online/track") as track_response:
-                track_data = await track_response.json()
-                logger.info(f"Track response: {track_data}")
-                artist = track_data[1][1] if track_data and len(track_data) > 1 else "VTRNK"
-                title = track_data[2][1] if track_data and len(track_data) > 2 else "Unknown Track"
-            async with session.get("https://vtrnk.online/get_cover_path") as cover_response:
-                cover_data = await cover_response.json()
-                cover_path = cover_data.get("cover_path", "/images/placeholder2.png")
-                file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
-                logger.info(f"Local file path for /radio: {file_path}")
-        is_group = update.message.chat.type in ['group', 'supergroup']
-        button_type = {'url': 'https://t.me/drum_n_bot'} if is_group else {'web_app': {'url': 'https://vtrnk.online/telegram-mini-app.html'}}
-        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", **button_type)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            logger.info(f"Sending cover as file: {file_path}")
-            with open(file_path, 'rb') as photo:
-                caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
-                logger.info(f"Sending /radio response: {caption}")
-                await update.message.reply_photo(
-                    photo=photo,
-                    caption=caption,
-                    reply_markup=reply_markup
-                )
-        else:
-            logger.error(f"Cover file not found: {file_path}")
-            cover_url = "https://vtrnk.online/images/placeholder2.png"
-            logger.info(f"Falling back to default cover URL: {cover_url}")
-            caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
-            await update.message.reply_photo(
-                photo=cover_url,
-                caption=caption,
-                reply_markup=reply_markup
-            )
-        logger.info(f"Sent /radio response: {title} by {artist}")
-    except Exception as e:
-        logger.error(f"Error in /radio: {e}")
-        await update.message.reply_text("Не удалось получить информацию о текущем треке. Попробуйте позже!")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args and context.args[0] == 'launch_radio':
-        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", web_app={"url": "https://vtrnk.online/telegram-mini-app.html"})]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Запускаем VTRNK Radio!", reply_markup=reply_markup)
-        logger.info("Launched Mini App from /start launch_radio")
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "Сначала добавь меня @drum_n_bot в администраторы канала с правами на постинг сообщений.\n\n"
@@ -629,6 +677,7 @@ def main():
         entry_points=[CommandHandler('add', add_channel)],
         states={
             ASK_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_channel), CallbackQueryHandler(ask_channel, pattern='cancel')],
+            ASK_DUPLICATE: [CallbackQueryHandler(ask_duplicate)],
             ASK_MODE: [CallbackQueryHandler(ask_mode)],
             ASK_EXTRA: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_extra), CallbackQueryHandler(ask_extra, pattern='^(back|cancel)$')],
             ASK_CONFIRM_DEFAULT: [CallbackQueryHandler(ask_confirm_default, pattern='^(default_time|back|cancel)$')],
