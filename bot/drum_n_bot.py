@@ -80,22 +80,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
             logger.info("Fetching track data for /radio")
             async with session.get("https://vtrnk.online/track") as track_response:
                 track_data = await track_response.json()
                 logger.info(f"Track response: {track_data}")
                 artist = track_data[1][1] if track_data and len(track_data) > 1 else "VTRNK"
                 title = track_data[2][1] if track_data and len(track_data) > 2 else "Unknown Track"
+
+            logger.info("Fetching cover path for /radio")
             async with session.get("https://vtrnk.online/get_cover_path") as cover_response:
                 cover_data = await cover_response.json()
                 cover_path = cover_data.get("cover_path", "/images/placeholder2.png")
                 file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
                 logger.info(f"Local file path for /radio: {file_path}")
+
+        # Проверяем, в чате или в личке
         is_group = update.message.chat.type in ['group', 'supergroup']
         button_type = {'url': 'https://t.me/drum_n_bot'} if is_group else {'web_app': {'url': 'https://vtrnk.online/telegram-mini-app.html'}}
         keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", **button_type)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Проверяем существование файла
         if os.path.exists(file_path) and os.path.isfile(file_path):
             logger.info(f"Sending cover as file: {file_path}")
             with open(file_path, 'rb') as photo:
@@ -118,7 +124,7 @@ async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         logger.info(f"Sent /radio response: {title} by {artist}")
     except Exception as e:
-        logger.error(f"Error in /radio: {e}")
+        logger.error(f"Error in /radio: {str(e)}")
         await update.message.reply_text("Не удалось получить информацию о текущем треке. Попробуйте позже!")
 
 async def handle_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,7 +141,7 @@ async def handle_member_update(update: Update, context: ContextTypes.DEFAULT_TYP
 async def daily_post_job(context: ContextTypes.DEFAULT_TYPE):
     channel_id = context.job.data['channel_id']
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+        async with aiohttp.ClientSession() as session:
             async with session.get("https://vtrnk.online/track") as resp:
                 track_data = await resp.json()
                 artist = track_data[1][1] if len(track_data) > 1 else "VTRNK"
@@ -169,7 +175,7 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
     announced_tracks = {}
     while True:
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with aiohttp.ClientSession() as session:
                 async with session.get("https://vtrnk.online/track") as resp:
                     track_data = await resp.json()
                     filename = track_data[0][1] if len(track_data) > 0 else ""
@@ -177,7 +183,7 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                     title = track_data[2][1] if len(track_data) > 2 else "Radio Show"
                 is_podcast = filename.startswith(RADIO_SHOW_DIR)
                 if is_podcast and filename != last_track:
-                    await asyncio.sleep(60)  # Ждём 60 сек для подтверждения трека
+                    await asyncio.sleep(60)
                     async with session.get("https://vtrnk.online/track") as resp:
                         track_data = await resp.json()
                         new_filename = track_data[0][1] if len(track_data) > 0 else ""
@@ -197,6 +203,7 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                         channels = cursor.fetchall()
                         conn.close()
                         for ch_id, mode, extra in channels:
+                            logger.info(f"Posting to channel {ch_id} with mode {mode}")
                             if mode == 'no_posts':
                                 continue
                             if mode == 'all_shows' and new_filename != announced_tracks.get(ch_id):
@@ -205,6 +212,7 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                             elif mode == 'keyword_show' and extra and extra.lower() in (new_title.lower() + new_artist.lower()) and new_filename != announced_tracks.get(ch_id):
                                 await send_podcast_post(context, ch_id, file_path, caption, reply_markup)
                                 announced_tracks[ch_id] = new_filename
+                            logger.info(f"Posted to channel {ch_id}")
                     last_track = new_filename
                 else:
                     last_track = filename
@@ -214,6 +222,7 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
 
 async def send_podcast_post(context, channel_id, file_path, caption, reply_markup):
     try:
+        logger.info(f"Attempting to post to {channel_id}")
         # Проверка прав перед постингом
         member = await context.bot.get_chat_member(channel_id, context.bot.id)
         if member.status != 'administrator' or (hasattr(member, 'can_post_messages') and not member.can_post_messages):
@@ -224,12 +233,12 @@ async def send_podcast_post(context, channel_id, file_path, caption, reply_marku
                 await context.bot.send_photo(channel_id, photo=photo, caption=caption, reply_markup=reply_markup)
         else:
             await context.bot.send_photo(channel_id, photo="https://vtrnk.online/images/placeholder2.png", caption=caption, reply_markup=reply_markup)
+        logger.info(f"Successfully posted to {channel_id}")
     except Exception as e:
         logger.error(f"Error posting to {channel_id}: {e}")
 
 async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    context.user_data.clear()  # Очищаем user_data перед началом
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     await asyncio.sleep(1)
     msg = await update.message.reply_text("Добавь бота в админы канала/чата. Укажи username (с @) или ID.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
@@ -257,12 +266,14 @@ async def ask_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
             channel = channel_input
 
         if channel.startswith('@'):
+            await asyncio.sleep(0.5)  # Задержка для избежания rate limit
             chat = await context.bot.get_chat(channel)
             channel_id = chat.id
         else:
             channel_id = int(channel)
+        context.user_data['channel_id'] = channel_id  # Сохраняем channel_id в любом случае
+        logger.info(f"Channel input: {channel_input}, parsed channel_id: {channel_id}")
         # Проверка админства бота с повторной попыткой
-        chat = await context.bot.get_chat(channel_id)
         for _ in range(2):  # Две попытки
             try:
                 member = await context.bot.get_chat_member(channel_id, context.bot.id)
@@ -274,7 +285,6 @@ async def ask_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             logger.error(f"Failed to get chat member for {channel_id} after retries")
             member = None
-        context.user_data['channel_id'] = channel_id  # Сохраняем channel_id в любом случае
         if member and (member.status != 'administrator' or (hasattr(member, 'can_post_messages') and not member.can_post_messages)):
             keyboard = [[InlineKeyboardButton("Пропустить проверку", callback_data='skip_check'), InlineKeyboardButton("Отмена", callback_data='cancel')]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -304,7 +314,7 @@ async def ask_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['message_ids'].append(msg.message_id)
         return ASK_MODE
     except Exception as e:
-        logger.error(f"Error getting channel {channel_input}: {e}")
+        logger.error(f"Error getting channel: {e}")
         await update.message.reply_text("Не удалось найти канал/чат. Проверь username или ID и убедись, что @drum_n_bot добавлен в админы.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Отмена", callback_data='cancel')]]))
         await clean_chat(update, context)
         return ConversationHandler.END
@@ -480,7 +490,7 @@ async def confirm_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if 'channel_id' not in context.user_data:
         logger.error("channel_id missing in confirm_setup")
-        msg = await (update.callback_query.message if update.callback_query else update.message).reply_text("Ошибка: не удалось определить ID канала/чата. Попробуйте заново с /add.")
+        await (update.callback_query.message if update.callback_query else update.message).reply_text("Ошибка: не удалось определить ID канала/чата. Попробуйте заново с /add.")
         await clean_chat(update, context)
         return ConversationHandler.END
     channel_id = context.user_data['channel_id']
@@ -505,7 +515,7 @@ async def confirm_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = await update.callback_query.message.reply_text(f"Настройки для канала/чата '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
     else:
         msg = await update.message.reply_text(f"Настройки для канала/чата '{channel_title}' установлены: режим '{mode}'{f' с параметром {extra}' if extra else ''}.")
-    context.user_data['final_msg_id'] = msg.message_id
+    context.user_data['final_msg_id'] = msg.message_id  # Сохраняем ID финального поста
     keyboard = [
         [InlineKeyboardButton("Очистить чат", callback_data='clean_chat')],
         [InlineKeyboardButton("Отставить", callback_data='keep_chat')]
@@ -651,7 +661,7 @@ async def ask_test_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(1)
     channel_id = int(query.data)
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
             logger.info("Fetching track data for test post")
             async with session.get("https://vtrnk.online/track") as track_response:
                 track_data = await track_response.json()
