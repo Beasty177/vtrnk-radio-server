@@ -24,7 +24,7 @@ data/temp/
 hls/
 
 images/
-
+#Убрали из гитхаб тестовый файл ликвид соап
 # liquidsoap/
 liquidsoap/radio.liq
 liquidsoap/radio_v2.liq
