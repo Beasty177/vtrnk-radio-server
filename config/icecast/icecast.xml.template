@@ -40,6 +40,11 @@
         <mount-name>/video_stream</mount-name>
     </mount>
 
+    <mount type="normal">
+        <public>0</public>
+        <mount-name>/butt_stream</mount-name>
+    </mount>
+
     <fileserve>1</fileserve>
 
     <paths>
