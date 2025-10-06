@@ -64,11 +64,13 @@ __pycache__/
 #       Для Windows
 Thumbs.db
 
-
-
 #Веменно убираем тест кнопок
 nano .gitignore
 
 *.deb
 google-chrome-stable_current_amd64.deb
 chromedriver-linux64.zip
+
+#временные файлы для аудио рестрима в ликвид соап
+tmp/pipes/*
+#для стрима через butt
