@@ -34,6 +34,8 @@ LOG_FILE = os.getenv('LOG_FILE', 'radio_player.log')
 UPLOAD_RADIO_DIR = os.getenv('UPLOAD_RADIO_DIR', '/home/beasty197/projects/vtrnk_radio/audio/radio_show')
 UPLOAD_TRACK_DIR = os.getenv('UPLOAD_TRACK_DIR', '/home/beasty197/projects/vtrnk_radio/audio/upload_dir')
 IMAGES_DIR = os.getenv('IMAGES_DIR', '/home/beasty197/projects/vtrnk_radio/images')
+LIVE_STREAM_COVERS_DIR = os.getenv('LIVE_STREAM_COVERS_DIR', '/home/beasty197/projects/vtrnk_radio/images/live_stream_covers')
+PLACEHOLDER_LIVE_STREAM = os.getenv('PLACEHOLDER_LIVE_STREAM', '/home/beasty197/projects/vtrnk_radio/images/placeholder_live_stream.png')
 
 # Playback settings
 MAX_HISTORY_SIZE = 60  # Maximum tracks in playback history
@@ -122,6 +124,27 @@ def get_db():
     except Exception as e:
         logger.error(f"Error connecting to database at {DB_PATH}: {str(e)}")
         raise
+
+def init_live_streams_db():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS live_streams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                show_code TEXT UNIQUE NOT NULL,
+                author TEXT NOT NULL,
+                name TEXT NOT NULL,
+                style TEXT,
+                description TEXT,
+                cover_path TEXT NOT NULL DEFAULT '/images/placeholder_live_stream.png'
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        logger.info("Live streams table initialized or already exists")
+    except Exception as e:
+        logger.error(f"Error initializing live_streams table: {str(e)}")
 
 def liquidsoap_command(command):
     try:
@@ -1063,6 +1086,7 @@ def play_playlist():
 
 if __name__ == '__main__':
     logger.info("Starting radio player, initializing Flask server...")
+    init_live_streams_db()
     from gevent.pywsgi import WSGIServer
     from geventwebsocket.handler import WebSocketHandler
     http_server = WSGIServer(('0.0.0.0', 5001), app, handler_class=WebSocketHandler)
