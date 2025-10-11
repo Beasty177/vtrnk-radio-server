@@ -162,6 +162,22 @@ def liquidsoap_command(command):
         logger.error(f"Error sending command to Liquidsoap: {str(e)}")
         return str(e)
 
+def get_current_status():
+    try:
+        response = liquidsoap_command("get_current_track")
+        status = {}
+        if response:
+            parts = response.split(' | ')
+            for part in parts:
+                if '=' in part:
+                    k, v = part.split('=', 1)
+                    status[k.strip()] = v.strip()
+        logger.debug(f"Current status from Liquidsoap: {status}")
+        return status
+    except Exception as e:
+        logger.error(f"Error getting current status: {str(e)}")
+        return {}
+
 def get_normal_queue_length():
     response = liquidsoap_command("get_normal_queue_length")
     if response:
@@ -179,7 +195,7 @@ def get_current_track():
         return data
     except Exception as e:
         logger.error(f"Error reading current track: {str(e)}")
-        return {"filename": "", "artist": "VTRNK", "title": "Radio Show"}
+        return {"filename": "", "artist": "VTRNK", "title": "Radio Show", "is_live": False}
 
 def get_last_played_track():
     try:
@@ -390,12 +406,24 @@ def handle_track():
                 'special_queue_timestamp': special_queue_timestamp,
                 'normal_queue_timestamp': normal_queue_timestamp,
                 'track_queue_timestamp': track_queue_timestamp,
-                'queue': queue
+                'queue': queue,
+                'is_live': False
             }
+            # Check if it's a live stream via telnet
+            status = get_current_status()
+            is_live = status.get('live_stream_butt', 'false') == 'true'
+            current_track_json['is_live'] = is_live
+            if is_live:
+                current_track_json['artist'] = "Live Stream"
+                if not title_from_request or title_from_request == "Unknown Title":
+                    current_track_json['title'] = "Radio Show"
+                else:
+                    current_track_json['title'] = title_from_request
+                logger.info(f"Detected live stream: artist={current_track_json['artist']}, title={current_track_json['title']}")
             with open(CURRENT_TRACK_FILE, 'w') as f:
                 json.dump(current_track_json, f)
             last_played = get_last_played_track()
-            if last_played != filename:
+            if last_played != filename and not is_live:
                 logger.info(f"Received and saved track metadata: artist={artist}, title={title}, filename={filename}, queue={queue}")
                 increment_play_count(filename)
                 add_to_playback_history(filename)
@@ -426,7 +454,8 @@ def handle_track():
                 ["filename", data.get("filename", "Unknown File")],
                 ["artist", data.get("artist", "Unknown Artist")],
                 ["title", data.get("title", "Unknown Title")],
-                ["album", data.get("album", "Radio VTRNK Stream")]
+                ["album", data.get("album", "Radio VTRNK Stream")],
+                ["is_live", data.get("is_live", False)]
             ])
         except Exception as e:
             logger.error(f"Error in handle_track (GET): {str(e)}")
@@ -434,7 +463,8 @@ def handle_track():
                 ["filename", "Unknown File"],
                 ["artist", "Unknown Artist"],
                 ["title", "Unknown Title"],
-                ["album", "Radio VTRNK Stream"]
+                ["album", "Radio VTRNK Stream"],
+                ["is_live", False]
             ]), 500
 
 @app.route('/track_added_special', methods=['POST'])
@@ -761,6 +791,10 @@ def fetch_cover_path():
         with open(CURRENT_TRACK_FILE, 'r') as f:
             data = json.load(f)
         filename = data.get('filename', '')
+        is_live = data.get('is_live', False)
+        if is_live:
+            logger.info("Using live stream placeholder cover")
+            return "/images/placeholder_live_stream.png"
         if not filename:
             logger.warning("No filename found in JSON")
             return "/images/placeholder2.png"
