@@ -87,6 +87,20 @@ def normalize_style(style):
             return canonical
     return "Unknown" if style not in [s.lower() for s in PREDEFINED_STYLES] else style.title()
 
+def get_live_stream_by_code(show_code):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM live_streams WHERE show_code = ?", (show_code,))
+        stream = cursor.fetchone()
+        conn.close()
+        if stream:
+            return dict(stream)
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching live stream by code {show_code}: {str(e)}")
+        return None
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -350,19 +364,45 @@ def get_track_metadata(track_path):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT artist, track_title, name FROM tracks WHERE path = ?", (track_path,))
+        cursor.execute("SELECT artist, track_title, name, path_img FROM tracks WHERE path = ?", (track_path,))
         track = cursor.fetchone()
         conn.close()
         if track:
             artist = track['artist'] if track['artist'] and track['artist'].strip() else "VTRNK"
             title = track['track_title'] if track['track_title'] and track['track_title'].strip() else (track['name'] if track['name'] and track['name'].strip() else "Radio Show")
+            cover = track['path_img'] if track['path_img'] else "/images/placeholder2.png"
             logger.info(f"Found metadata for {track_path}: artist={artist}, title={title}")
-            return artist, title
+            return artist, title, cover
         logger.warning(f"No metadata found for track {track_path}")
-        return "VTRNK", "Radio Show"
+        return "VTRNK", "Radio Show", "/images/placeholder2.png"
     except Exception as e:
         logger.error(f"Error fetching metadata for track {track_path}: {str(e)}")
-        return "VTRNK", "Radio Show"
+        return "VTRNK", "Radio Show", "/images/placeholder2.png"
+
+# START OF LIVE STREAM SKIP FEATURE
+# Эта функция запускает таймер на 10 секунд после детекции live-стрима и отправляет skip_normal в Liquidsoap.
+# Чтобы отключить: закомментируй вызов schedule_live_stream_skip() в handle_track и всю функцию.
+live_stream_skip_scheduled = False  # Флаг, чтобы избежать множественных таймеров
+
+def schedule_live_stream_skip():
+    global live_stream_skip_scheduled
+    if live_stream_skip_scheduled:
+        logger.info("Live stream skip already scheduled, skipping duplicate")
+        return
+    live_stream_skip_scheduled = True
+    def skip_after_delay():
+        try:
+            time.sleep(10)  # Ждём 10 секунд
+            response = skip_normal_queue()
+            logger.info(f"Live stream detected, skipped normal queue after 10s: {response}")
+            global live_stream_skip_scheduled
+            live_stream_skip_scheduled = False  # Сброс флага
+        except Exception as e:
+            logger.error(f"Error in live stream skip timer: {str(e)}")
+            live_stream_skip_scheduled = False
+    threading.Thread(target=skip_after_delay, daemon=True).start()
+    logger.info("Scheduled live stream skip in 10 seconds")
+# END OF LIVE STREAM SKIP FEATURE
 
 @app.route('/track_started', methods=['POST'])
 def track_started():
@@ -387,7 +427,6 @@ def handle_track():
             artist_from_request = data.get('artist', 'Unknown Artist')
             title_from_request = data.get('title', 'Unknown Title')
             filename = data.get('filename', 'Unknown File')
-            artist, title = get_track_metadata(filename)
             normal_queue_length = data.get('normal_queue_length', 0)
             special_queue_length = data.get('special_queue_length', 0)
             timestamp = data.get('timestamp', 'Unknown Timestamp')
@@ -395,11 +434,19 @@ def handle_track():
             normal_queue_timestamp = data.get('normal_queue_timestamp', '')
             track_queue_timestamp = data.get('track_queue_timestamp', '')
             queue = data.get('queue', 'unknown')
+            # Check if it's a live stream via telnet
+            status = get_current_status()
+            is_live = status.get('live_stream_butt', 'false') == 'true'
+            if not is_live:
+                artist, title, cover = get_track_metadata(filename)
+            else:
+                artist, title, cover = "VTRNK", "Radio Show", PLACEHOLDER_LIVE_STREAM
             current_track_json = {
                 'filename': filename,
                 'artist': artist,
                 'title': title,
                 'album': 'Radio VTRNK Stream',
+                'cover_path': cover,
                 'normal_queue_length': normal_queue_length,
                 'special_queue_length': special_queue_length,
                 'timestamp': timestamp,
@@ -407,19 +454,28 @@ def handle_track():
                 'normal_queue_timestamp': normal_queue_timestamp,
                 'track_queue_timestamp': track_queue_timestamp,
                 'queue': queue,
-                'is_live': False
+                'is_live': is_live,
+                'show_code': ''
             }
-            # Check if it's a live stream via telnet
-            status = get_current_status()
-            is_live = status.get('live_stream_butt', 'false') == 'true'
-            current_track_json['is_live'] = is_live
             if is_live:
-                current_track_json['artist'] = "Live Stream"
-                if not title_from_request or title_from_request == "Unknown Title":
-                    current_track_json['title'] = "Radio Show"
+                show_code = title_from_request if title_from_request and title_from_request != "Unknown Title" else ""
+                stream = get_live_stream_by_code(show_code)
+                if stream:
+                    current_track_json['artist'] = stream['author']
+                    current_track_json['title'] = stream['name']
+                    current_track_json['cover_path'] = stream['cover_path']
+                    current_track_json['show_code'] = show_code
+                    logger.info(f"Detected matched live stream: code={show_code}, author={stream['author']}, name={stream['name']}, cover={stream['cover_path']}")
                 else:
-                    current_track_json['title'] = title_from_request
-                logger.info(f"Detected live stream: artist={current_track_json['artist']}, title={current_track_json['title']}")
+                    current_track_json['artist'] = "Live Stream"
+                    current_track_json['title'] = show_code or "Radio Show"
+                    current_track_json['cover_path'] = PLACEHOLDER_LIVE_STREAM
+                    current_track_json['show_code'] = show_code
+                    logger.info(f"Detected live stream without DB match: code={show_code}, using fallback")
+                # START OF LIVE STREAM SKIP FEATURE
+                # Запускаем таймер на skip_normal после детекции live-стрима
+                schedule_live_stream_skip()
+                # END OF LIVE STREAM SKIP FEATURE
             with open(CURRENT_TRACK_FILE, 'w') as f:
                 json.dump(current_track_json, f)
             last_played = get_last_played_track()
@@ -455,7 +511,9 @@ def handle_track():
                 ["artist", data.get("artist", "Unknown Artist")],
                 ["title", data.get("title", "Unknown Title")],
                 ["album", data.get("album", "Radio VTRNK Stream")],
-                ["is_live", data.get("is_live", False)]
+                ["is_live", data.get("is_live", False)],
+                ["cover_path", data.get("cover_path", "/images/placeholder2.png")],
+                ["show_code", data.get("show_code", "")]
             ])
         except Exception as e:
             logger.error(f"Error in handle_track (GET): {str(e)}")
@@ -464,7 +522,9 @@ def handle_track():
                 ["artist", "Unknown Artist"],
                 ["title", "Unknown Title"],
                 ["album", "Radio VTRNK Stream"],
-                ["is_live", False]
+                ["is_live", False],
+                ["cover_path", "/images/placeholder2.png"],
+                ["show_code", ""]
             ]), 500
 
 @app.route('/track_added_special', methods=['POST'])
@@ -790,25 +850,8 @@ def fetch_cover_path():
     try:
         with open(CURRENT_TRACK_FILE, 'r') as f:
             data = json.load(f)
-        filename = data.get('filename', '')
-        is_live = data.get('is_live', False)
-        if is_live:
-            logger.info("Using live stream placeholder cover")
-            return "/images/placeholder_live_stream.png"
-        if not filename:
-            logger.warning("No filename found in JSON")
-            return "/images/placeholder2.png"
-        static_cover = getattr(fetch_cover_path, 'static_cover', None)
-        if static_cover and static_cover['filename'] == filename:
-            return static_cover['cover_path']
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT path_img FROM tracks WHERE path = ?", (filename,))
-        track = cursor.fetchone()
-        conn.close()
-        cover_path = track['path_img'] if track and track['path_img'] else "/images/placeholder2.png"
-        logger.debug(f"Found cover for {filename}: {cover_path}")
-        fetch_cover_path.static_cover = {'filename': filename, 'cover_path': cover_path}
+        cover_path = data.get('cover_path', "/images/placeholder2.png")
+        logger.debug(f"Cover path from JSON: {cover_path}")
         return cover_path
     except Exception as e:
         logger.error(f"Error fetching cover path: {str(e)}")
@@ -1040,7 +1083,7 @@ def play_radio_show():
             logger.info(f"Sent to Liquidsoap: play_radio_show {track_path}, response: {response}")
             skip_response = skip_normal_queue()
             logger.info(f"Skipped normal queue after manual show play, response: {skip_response}")
-            artist, title = get_track_metadata(track_path)
+            artist, title, _ = get_track_metadata(track_path)
             save_last_played_track(track_path)
             add_track_to_queue()
             return jsonify({
@@ -1117,6 +1160,135 @@ def play_playlist():
     except Exception as e:
         logger.error(f"Error in play_playlist: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def get_live_streams():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM live_streams ORDER BY id DESC")
+        streams = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        logger.info(f"Fetched {len(streams)} live streams")
+        return streams
+    except Exception as e:
+        logger.error(f"Error fetching live streams: {str(e)}")
+        return []
+
+@app.route('/live_streams', methods=['GET'])
+def get_live_streams_endpoint():
+    return jsonify(get_live_streams())
+
+@app.route('/add_live_stream', methods=['POST'])
+def add_live_stream():
+    try:
+        data = request.form
+        show_code = data.get('show_code')
+        author = data.get('author')
+        name = data.get('name')
+        style = data.get('style')
+        description = data.get('description')
+        if not show_code or not author or not name:
+            return jsonify({'success': False, 'error': 'Код шоу, автор и название обязательны'}), 400
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM live_streams WHERE show_code = ?", (show_code,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Код шоу уже существует'}), 400
+        cursor.execute("""
+            INSERT INTO live_streams (show_code, author, name, style, description, cover_path)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (show_code, author, name, style, description, PLACEHOLDER_LIVE_STREAM))
+        stream_id = cursor.lastrowid
+        conn.commit()
+        cover_file = request.files.get('coverFile')
+        if cover_file and cover_file.filename:
+            if not cover_file.filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                conn.close()
+                return jsonify({'success': False, 'error': 'Неверный формат обложки. Только JPG, JPEG, PNG'}), 400
+            os.makedirs(LIVE_STREAM_COVERS_DIR, exist_ok=True)
+            cover_path = os.path.join(LIVE_STREAM_COVERS_DIR, cover_file.filename)
+            cover_file.save(cover_path)
+            relative_path = f'/images/live_stream_covers/{cover_file.filename}'
+            cursor.execute("UPDATE live_streams SET cover_path = ? WHERE id = ?", (relative_path, stream_id))
+            conn.commit()
+        conn.close()
+        logger.info(f"Added live stream: {show_code} by {author}")
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error adding live stream: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/update_live_stream', methods=['POST'])
+def update_live_stream():
+    try:
+        data = request.form
+        stream_id = data.get('id')
+        if not stream_id:
+            return jsonify({'success': False, 'error': 'ID стрима обязателен'}), 400
+        stream_id = int(stream_id)
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM live_streams WHERE id = ?", (stream_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Стрим не найден'}), 404
+        update_query = "UPDATE live_streams SET "
+        update_params = []
+        fields = [('show_code', data.get('show_code')), ('author', data.get('author')), ('name', data.get('name')), ('style', data.get('style')), ('description', data.get('description'))]
+        for field, value in fields:
+            if value:
+                update_query += f"{field} = ?, "
+                update_params.append(value)
+        cover_file = request.files.get('coverFile')
+        if cover_file and cover_file.filename:
+            if not cover_file.filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                conn.close()
+                return jsonify({'success': False, 'error': 'Неверный формат обложки. Только JPG, JPEG, PNG'}), 400
+            os.makedirs(LIVE_STREAM_COVERS_DIR, exist_ok=True)
+            cover_path = os.path.join(LIVE_STREAM_COVERS_DIR, cover_file.filename)
+            cover_file.save(cover_path)
+            relative_path = f'/images/live_stream_covers/{cover_file.filename}'
+            update_query += "cover_path = ?, "
+            update_params.append(relative_path)
+        if update_params:
+            update_query = update_query.rstrip(', ') + " WHERE id = ?"
+            update_params.append(stream_id)
+            cursor.execute(update_query, update_params)
+            affected_rows = cursor.rowcount
+            conn.commit()
+            if affected_rows > 0:
+                logger.info(f"Updated live stream id {stream_id}")
+                conn.close()
+                return jsonify({'success': True})
+        conn.close()
+        return jsonify({'success': False, 'error': 'Нет изменений'}), 400
+    except Exception as e:
+        logger.error(f"Error updating live stream: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/delete_live_stream', methods=['POST'])
+def delete_live_stream():
+    try:
+        data = request.get_json()
+        stream_id = data.get('id')
+        if not stream_id:
+            return jsonify({'success': False, 'error': 'ID стрима обязателен'}), 400
+        stream_id = int(stream_id)
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM live_streams WHERE id = ?", (stream_id,))
+        affected_rows = cursor.rowcount
+        conn.commit()
+        conn.close()
+        if affected_rows > 0:
+            logger.info(f"Deleted live stream id {stream_id}")
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Стрим не найден'}), 404
+    except Exception as e:
+        logger.error(f"Error deleting live stream: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     logger.info("Starting radio player, initializing Flask server...")
