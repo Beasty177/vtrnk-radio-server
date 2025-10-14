@@ -38,10 +38,10 @@ LIVE_STREAM_COVERS_DIR = os.getenv('LIVE_STREAM_COVERS_DIR', '/home/beasty197/pr
 PLACEHOLDER_LIVE_STREAM = os.getenv('PLACEHOLDER_LIVE_STREAM', '/home/beasty197/projects/vtrnk_radio/images/placeholder_live_stream.png')
 
 # Playback settings
-MAX_HISTORY_SIZE = 60  # Maximum tracks in playback history
+MAX_HISTORY_SIZE = 90  # Maximum tracks in playback history
 PLAYBACK_MODE = "random"  # Playback mode (currently fixed as random)
-HISTORY_EXCLUDE_SIZE = 60  # Number of recent tracks to exclude from next track selection
-NEXT_TRACK_CANDIDATES = 50  # Number of candidates to select random next track from
+HISTORY_EXCLUDE_SIZE = 90  # Number of recent tracks to exclude from next track selection
+NEXT_TRACK_CANDIDATES = 90  # Number of candidates to select random next track from
 
 # Delay settings
 SMART_SKIP_DELAY = 10  # Delay in seconds for smart_skip
@@ -469,7 +469,7 @@ def handle_track():
                 else:
                     current_track_json['artist'] = "Live Stream"
                     current_track_json['title'] = show_code or "Radio Show"
-                    current_track_json['cover_path'] = PLACEHOLDER_LIVE_STREAM
+                    current_track_json['cover_path'] = '/images/placeholder_live_stream.png'
                     current_track_json['show_code'] = show_code
                     logger.info(f"Detected live stream without DB match: code={show_code}, using fallback")
                 # START OF LIVE STREAM SKIP FEATURE
@@ -850,8 +850,30 @@ def fetch_cover_path():
     try:
         with open(CURRENT_TRACK_FILE, 'r') as f:
             data = json.load(f)
-        cover_path = data.get('cover_path', "/images/placeholder2.png")
-        logger.debug(f"Cover path from JSON: {cover_path}")
+        filename = data.get('filename', '')
+        is_live = data.get('is_live', False)
+        # First, check if cover_path is already in JSON (from handle_track, for matched live)
+        cover_from_json = data.get('cover_path')
+        if cover_from_json and cover_from_json.startswith('/'):
+            logger.debug(f"Using cover from JSON: {cover_from_json}")
+            return cover_from_json
+        if is_live:
+            logger.info("Using live stream placeholder cover (no JSON cover)")
+            return "/images/placeholder_live_stream.png"
+        if not filename:
+            logger.warning("No filename found in JSON")
+            return "/images/placeholder2.png"
+        static_cover = getattr(fetch_cover_path, 'static_cover', None)
+        if static_cover and static_cover['filename'] == filename:
+            return static_cover['cover_path']
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT path_img FROM tracks WHERE path = ?", (filename,))
+        track = cursor.fetchone()
+        conn.close()
+        cover_path = track['path_img'] if track and track['path_img'] else "/images/placeholder2.png"
+        logger.debug(f"Found cover for {filename}: {cover_path}")
+        fetch_cover_path.static_cover = {'filename': filename, 'cover_path': cover_path}
         return cover_path
     except Exception as e:
         logger.error(f"Error fetching cover path: {str(e)}")
