@@ -38,6 +38,10 @@ TRACKS_DATA_DIR = os.getenv('TRACKS_DATA_DIR')
 PLACEHOLDER_COVER = os.getenv('PLACEHOLDER_COVER')
 RADIO_SHOW_LIMIT = int(os.getenv('RADIO_SHOW_LIMIT', 20))
 
+# Title validation settings
+MAX_TITLE_LENGTH = 200  # Maximum length for track/set titles
+MAX_ARTIST_LENGTH = 100  # Maximum length for artist names
+
 # Проверка переменных
 logger.debug(f"AUDIO_DIRS: {AUDIO_DIRS}")
 logger.debug(f"COVER_DIR: {COVER_DIR}")
@@ -52,6 +56,24 @@ logger.debug(f"RADIO_SHOW_LIMIT: {RADIO_SHOW_LIMIT}")
 os.makedirs(COVER_DIR, exist_ok=True)
 os.makedirs(SHOW_COVER_DIR, exist_ok=True)
 os.makedirs(JINGLE_COVER_DIR, exist_ok=True)
+
+def validate_title_length(title, max_length=MAX_TITLE_LENGTH):
+    """Validate and truncate title if too long"""
+    if not title:
+        return title
+    if len(title) > max_length:
+        logger.warning(f"Title too long ({len(title)} chars), truncating to {max_length}: {title[:50]}...")
+        return title[:max_length].rstrip()
+    return title
+
+def validate_artist_length(artist, max_length=MAX_ARTIST_LENGTH):
+    """Validate and truncate artist name if too long"""
+    if not artist:
+        return artist
+    if len(artist) > max_length:
+        logger.warning(f"Artist name too long ({len(artist)} chars), truncating to {max_length}: {artist[:50]}...")
+        return artist[:max_length].rstrip()
+    return artist
 
 PREDEFINED_STYLES = [
     "Jungle", "Techstep", "Drum & Bass", "Breakbeat", "Liquid Funk", "Neurofunk",
@@ -306,8 +328,13 @@ def add_track_to_db(mp3_name, audio_path):
         cover = cover_base_path + mp3_name.replace('.mp3', '.jpg') if cover_saved else PLACEHOLDER_COVER
         path_img = cover
         artist, title, style = get_track_metadata(audio_path)
+        # Validate and truncate if too long
+        artist = validate_artist_length(artist)
+        title = validate_title_length(title)
         duration = get_track_duration(audio_path)
         full_title = f"{artist} - {title}" if artist != "Unknown Artist" else title
+        # Validate full title as well
+        full_title = validate_title_length(full_title)
         uploaded_by = get_uploaded_by(mp3_name)
         upload_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(os.path.getctime(audio_path)))
         cursor.execute("""

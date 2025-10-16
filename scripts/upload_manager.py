@@ -48,6 +48,10 @@ PLACEHOLDER_RELATIVE = os.getenv('PLACEHOLDER_RELATIVE')
 MP3_LIMIT = int(os.getenv('MP3_LIMIT', 300))
 RADIO_SHOW_LIMIT = int(os.getenv('RADIO_SHOW_LIMIT', 20))
 
+# Title validation settings
+MAX_TITLE_LENGTH = 200  # Maximum length for track/set titles
+MAX_ARTIST_LENGTH = 100  # Maximum length for artist names
+
 # Проверка переменных окружения
 logger.debug(f"UPLOAD_DIR: {UPLOAD_DIR}")
 logger.debug(f"AUDIO_DIR: {AUDIO_DIR}")
@@ -67,6 +71,24 @@ logger.debug(f"RADIO_SHOW_LIMIT: {RADIO_SHOW_LIMIT}")
 for dir_path in [UPLOAD_DIR, AUDIO_DIR, AUDIO_RADIO_SHOW_DIR, AUDIO_JINGLES_DIR, COVER_DIR, SHOW_COVER_DIR, JINGLE_COVER_DIR, TRACKS_DATA_DIR, TEMP_DIR]:
     os.makedirs(dir_path, exist_ok=True)
     logger.debug(f"Ensured directory exists: {dir_path}")
+
+def validate_title_length(title, max_length=MAX_TITLE_LENGTH):
+    """Validate and truncate title if too long"""
+    if not title:
+        return title
+    if len(title) > max_length:
+        logger.warning(f"Title too long ({len(title)} chars), truncating to {max_length}: {title[:50]}...")
+        return title[:max_length].rstrip()
+    return title
+
+def validate_artist_length(artist, max_length=MAX_ARTIST_LENGTH):
+    """Validate and truncate artist name if too long"""
+    if not artist:
+        return artist
+    if len(artist) > max_length:
+        logger.warning(f"Artist name too long ({len(artist)} chars), truncating to {max_length}: {artist[:50]}...")
+        return artist[:max_length].rstrip()
+    return artist
 
 def check_file_stable(file_path, check_interval=2, checks=3):
     """Проверяем, стабилен ли файл (не меняется размер)."""
@@ -189,6 +211,9 @@ def process_file(file_path):
 
     # Извлекаем метаданные
     author, title = get_track_info(temp_path)
+    # Validate and truncate if too long
+    author = validate_artist_length(author)
+    title = validate_title_length(title)
     cover_data, cover_ext = get_cover_art(temp_path)
     cover_mime = 'image/png' if cover_ext == '.png' else 'image/jpeg'
 
@@ -241,10 +266,13 @@ def process_file(file_path):
     # Сохранение JSON с данными трека
     track_data_path = os.path.join(TRACKS_DATA_DIR, mp3_name.replace('.mp3', '.json'))
     os.makedirs(TRACKS_DATA_DIR, exist_ok=True)
+    # Validate full title as well
+    full_title = f"{author} - {title}"
+    full_title = validate_title_length(full_title)
     track_data = {
         "name": mp3_name,
         "cover": f"{cover_base_path}{mp3_name.replace('.mp3', cover_ext)}" if cover_saved else PLACEHOLDER_RELATIVE,
-        "title": f"{author} - {title}",
+        "title": full_title,
         "style": "",
         "history": "",
         "uploaded_by": "manual_upload",

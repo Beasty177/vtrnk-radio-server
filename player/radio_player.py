@@ -45,6 +45,10 @@ NEXT_TRACK_CANDIDATES = 50  # Number of candidates to select random next track f
 SMART_SKIP_DELAY = 10  # Delay in seconds for smart_skip
 RADIO_SHOW_SKIP_DELAY = 10  # Delay in seconds for radio show skip in schedule_checker and play_radio_show
 
+# Title validation settings
+MAX_TITLE_LENGTH = 200  # Maximum length for track/set titles
+MAX_ARTIST_LENGTH = 100  # Maximum length for artist names
+
 # Styles for normalization
 PREDEFINED_STYLES = [
     "Jungle", "Techstep", "Drum & Bass", "Breakbeat", "Liquid Funk", "Neurofunk",
@@ -70,8 +74,27 @@ STYLE_VARIANTS = {
     "Minimal DnB": ["minimal drum & bass", "minimal dnb"],
     "Ambient DnB": ["ambient drum & bass", "ambient dnb"],
     "Electronic": ["электронная музыка", "electronic", "electro"],
-    "Dance": ["dance & dj", "dance & dj/general"]
+    "Dance": ["dance & dj", "dance & dj/general"],
+    "Experimental": ["experimental", "drone", "noise", "ambient", "musique concrète"]
 }
+
+def validate_title_length(title, max_length=MAX_TITLE_LENGTH):
+    """Validate and truncate title if too long"""
+    if not title:
+        return title
+    if len(title) > max_length:
+        logger.warning(f"Title too long ({len(title)} chars), truncating to {max_length}: {title[:50]}...")
+        return title[:max_length].rstrip()
+    return title
+
+def validate_artist_length(artist, max_length=MAX_ARTIST_LENGTH):
+    """Validate and truncate artist name if too long"""
+    if not artist:
+        return artist
+    if len(artist) > max_length:
+        logger.warning(f"Artist name too long ({len(artist)} chars), truncating to {max_length}: {artist[:50]}...")
+        return artist[:max_length].rstrip()
+    return artist
 
 # Normalize style function
 def normalize_style(style):
@@ -475,9 +498,11 @@ def update_show():
         update_query = "UPDATE tracks SET "
         update_params = []
         if new_artist:
+            new_artist = validate_artist_length(new_artist)
             update_query += "artist = ?, "
             update_params.append(new_artist)
         if new_title:
+            new_title = validate_title_length(new_title)
             update_query += "title = ?, "
             update_params.append(new_title)
         if new_style:
