@@ -40,6 +40,7 @@
             overflow-x: hidden;
             position: relative;
             z-index: 1;
+            will-change: transform;
         }
         .logo {
             max-width: 200px;
@@ -192,6 +193,26 @@
             z-index: 0;
             display: none;
         }
+        .swipe-hint {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 16px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 1001;
+            pointer-events: none;
+            max-width: 200px;
+            text-align: center;
+        }
+        .swipe-hint.show {
+            opacity: 1;
+        }
         @media (max-width: 600px) {
             body {
                 background-color: #1a1a1a;
@@ -256,6 +277,7 @@
             <a href="/vtrnk.m3u" download title="Скачать M3U-файл, чтобы слушать VTRNK в любом медиаплеере, VLC, Winamp, iTunes или умных устройствах">Добавить радио в плеер</a>
         </div>
     </div>
+    <div class="swipe-hint" id="swipe-hint">Свайп влево для видео</div>
     <div class="container">
         <img src="/images/logovtrnk.png" alt="Логотип" class="logo">
         <div class="equalizer">
@@ -292,6 +314,9 @@
         const stopIcon = document.getElementById('stop-icon');
         const hamburgerIcon = document.getElementById('hamburger-icon');
         const menuContent = document.getElementById('menu-content');
+        const swipeHint = document.getElementById('swipe-hint');
+        const container = document.querySelector('.container');
+        const posterContainer = document.querySelector('.poster-container');
         let isPlaying = false;
         let isMenuOpen = false;
 
@@ -506,6 +531,75 @@
         if ('mediaSession' in navigator) {
             navigator.mediaSession.setActionHandler('play', togglePlay);
             navigator.mediaSession.setActionHandler('pause', togglePlay);
+        }
+
+        // Swipe gesture for mobile navigation - only on poster-container with animation
+        let startX = 0;
+        let startY = 0;
+        let currentX = 0;
+        let currentY = 0;
+        let startTime = 0;
+        const threshold = 100; // Minimum swipe distance in pixels
+        const minHoldTime = 300; // Minimum hold time in ms for a valid swipe
+        const isMobile = window.innerWidth <= 600;
+
+        if (isMobile && posterContainer) {
+            posterContainer.addEventListener('touchstart', (e) => {
+                const target = e.target;
+                if (target.tagName === 'BUTTON' || target.closest('button')) {
+                    return;
+                }
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                startTime = Date.now();
+                currentX = startX;
+                currentY = startY;
+                swipeHint.textContent = 'Свайп влево для видео';
+                swipeHint.classList.add('show');
+                container.style.transition = 'none';
+                container.style.transform = 'translateX(0px)';
+            }, { passive: false });
+
+            posterContainer.addEventListener('touchmove', (e) => {
+                if (!startX || !startTime) return;
+                currentX = e.touches[0].clientX;
+                currentY = e.touches[0].clientY;
+                const deltaX = currentX - startX;
+                const deltaY = currentY - startY;
+
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    e.preventDefault();
+                    container.style.transform = `translateX(${deltaX}px)`;
+
+                    if (deltaX < -30) {
+                        swipeHint.textContent = 'Переход к видео...';
+                    } else if (deltaX > 30) {
+                        swipeHint.textContent = 'Свайп вправо для радио (или используйте меню)';
+                    }
+                }
+            }, { passive: false });
+
+            posterContainer.addEventListener('touchend', (e) => {
+                const deltaX = currentX - startX;
+                const holdTime = Date.now() - startTime;
+                swipeHint.classList.remove('show');
+                container.style.transition = 'transform 0.3s ease-out';
+
+                if (holdTime < minHoldTime || Math.abs(deltaX) < threshold) {
+                    container.style.transform = 'translateX(0px)';
+                } else if (deltaX < -threshold) {
+                    // Swipe left to video
+                    container.style.transform = `translateX(-${window.innerWidth}px)`;
+                    setTimeout(() => {
+                        window.location.href = '/stream.html';
+                    }, 300);
+                } else {
+                    container.style.transform = 'translateX(0px)';
+                }
+
+                startX = startY = currentX = currentY = 0;
+                startTime = 0;
+            }, { passive: false });
         }
     </script>
 </body>
