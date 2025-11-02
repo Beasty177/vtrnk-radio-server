@@ -421,12 +421,12 @@ def get_track_metadata(track_path):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT artist, track_title, name, path_img FROM tracks WHERE path = ?", (track_path,))
+        cursor.execute("SELECT artist, title, name, path_img FROM tracks WHERE path = ?", (track_path,))  # ИСПРАВЛЕНИЕ: title вместо track_title
         track = cursor.fetchone()
         conn.close()
         if track:
             artist = track['artist'] if track['artist'] and track['artist'].strip() else "VTRNK"
-            title = track['track_title'] if track['track_title'] and track['track_title'].strip() else (track['name'] if track['name'] and track['name'].strip() else "Radio Show")
+            title = track['title'] if track['title'] and track['title'].strip() else (track['name'] if track['name'] and track['name'].strip() else "Radio Show")  # <-- Было: track['track_title']
             cover = track['path_img'] if track['path_img'] else "/images/placeholder2.png"
             logger.info(f"Found metadata for {track_path}: artist={artist}, title={title}")
             return artist, title, cover
@@ -630,7 +630,7 @@ def update_show():
         data = request.form
         track_path = data.get('track_path')
         new_artist = data.get('new_artist')
-        new_title = data.get('new_title')
+        new_title = data.get('new_title')  # Это для display title
         new_style = data.get('new_style')
         new_description = data.get('new_description', None)
         new_jingle_highlight_str = data.get('new_jingle_highlight', None)
@@ -650,8 +650,8 @@ def update_show():
         if new_artist:
             update_query += "artist = ?, "
             update_params.append(new_artist)
-        if new_title:
-            update_query += "track_title = ?, "
+        if new_title:  # ИСПРАВЛЕНИЕ: Обновляем title, не track_title
+            update_query += "title = ?, "  # <-- Было: track_title = ?
             update_params.append(new_title)
         if new_style:
             normalized_style = normalize_style(new_style)
@@ -683,7 +683,7 @@ def update_show():
             affected_rows = cursor.rowcount
             conn.commit()
             if affected_rows > 0:
-                logger.info(f"Updated show for path {track_path}")
+                logger.info(f"Updated show for path {track_path}, including title if provided")
                 conn.close()
                 return jsonify({'success': True})
             else:

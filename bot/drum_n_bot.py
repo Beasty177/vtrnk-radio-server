@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import aiohttp
 import asyncio
+import sqlite3
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -34,6 +35,35 @@ BOT_TOKEN = os.getenv('BOT_TOKEN_DMB')
 CHAT_ID = os.getenv('CHAT_ID')
 RADIO_SHOW_DIR = '/home/beasty197/projects/vtrnk_radio/audio/radio_show'
 BASE_DIR = '/home/beasty197/projects/vtrnk_radio'
+DB_PATH = '/home/beasty197/projects/vtrnk_radio/data/radio.db'
+
+def get_db():
+    """Подключение к БД."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        logger.error(f"Error connecting to DB: {str(e)}")
+        raise
+
+def get_show_description(path):
+    """Получает описание радио-шоу из БД по пути."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT description FROM tracks WHERE path = ? AND track_info = 'radio_show'", (path,))
+        row = cursor.fetchone()
+        conn.close()
+        if row and row['description'] and row['description'].strip():
+            desc = row['description'].strip()
+            logger.info(f"Found description for {path}: {desc}")
+            return desc
+        logger.info(f"No description for {path}")
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching description for {path}: {str(e)}")
+        return None
 
 async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -44,6 +74,7 @@ async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"Track response: {track_data}")
                 artist = track_data[1][1] if track_data and len(track_data) > 1 else "VTRNK"
                 title = track_data[2][1] if track_data and len(track_data) > 2 else "Unknown Track"
+                filename = track_data[0][1] if track_data and len(track_data) > 0 else ""
 
             logger.info("Fetching cover path for /radio")
             async with session.get("https://vtrnk.online/get_cover_path") as cover_response:
@@ -58,11 +89,21 @@ async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", **button_type)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        # Проверяем, радио-шоу ли это
+        is_podcast = filename.startswith(RADIO_SHOW_DIR)
+        description = None
+        if is_podcast:
+            description = get_show_description(filename)
+            logger.info(f"Checked for podcast in /radio: {is_podcast}, description: {description}")
+
+        caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
+        if is_podcast and description:
+            caption += f"\n\n{description}"
+
         # Проверяем существование файла
         if os.path.exists(file_path) and os.path.isfile(file_path):
             logger.info(f"Sending cover as file: {file_path}")
             with open(file_path, 'rb') as photo:
-                caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
                 logger.info(f"Sending /radio response: {caption}")
                 await update.message.reply_photo(
                     photo=photo,
@@ -73,7 +114,6 @@ async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Cover file not found: {file_path}")
             cover_url = "https://vtrnk.online/images/placeholder2.png"
             logger.info(f"Falling back to default cover URL: {cover_url}")
-            caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
             await update.message.reply_photo(
                 photo=cover_url,
                 caption=caption,
@@ -118,6 +158,11 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                         new_title = track_data[2][1] if track_data and len(track_data) > 2 else "Radio Show"
 
                     if new_filename == filename and new_filename != announced_track:
+                        logger.info(f"Confirmed podcast: {new_filename}")
+                        # Получаем описание из БД
+                        description = get_show_description(new_filename)
+                        logger.info(f"Podcast description: {description}")
+
                         logger.info("Fetching cover path for podcast")
                         async with session.get("https://vtrnk.online/get_cover_path") as cover_response:
                             cover_data = await cover_response.json()
@@ -128,10 +173,13 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                         keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", url="https://t.me/drum_n_bot")]]
                         reply_markup = InlineKeyboardMarkup(keyboard)
 
+                        caption = f"Сейчас у нас в эфире радио подкаст {new_title} от {new_artist}. Подключайтесь!\nСлушай на VTRNK Radio: https://vtrnk.online"
+                        if description:
+                            caption += f"\n\n{description}"
+
                         if os.path.exists(file_path) and os.path.isfile(file_path):
                             logger.info(f"Sending cover as file: {file_path}")
                             with open(file_path, 'rb') as photo:
-                                caption = f"Сейчас у нас в эфире радио подкаст {new_title} от {new_artist}. Подключайтесь!\nСлушай на VTRNK Radio: https://vtrnk.online"
                                 logger.info(f"Sending podcast notification: {caption}")
                                 await context.bot.send_photo(
                                     chat_id=CHAT_ID,
@@ -143,7 +191,6 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                             logger.error(f"Cover file not found: {file_path}")
                             cover_url = "https://vtrnk.online/images/placeholder2.png"
                             logger.info(f"Falling back to default cover URL: {cover_url}")
-                            caption = f"Сейчас у нас в эфире радио подкаст {new_title} от {new_artist}. Подключайтесь!\nСлушай на VTRNK Radio: https://vtrnk.online"
                             await context.bot.send_photo(
                                 chat_id=CHAT_ID,
                                 photo=cover_url,
