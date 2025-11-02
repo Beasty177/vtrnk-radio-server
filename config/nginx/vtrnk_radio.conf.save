@@ -1,0 +1,619 @@
+server {
+    listen 80;
+    server_name vtrnk.online;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name vtrnk.online;
+    ssl_certificate /etc/letsencrypt/live/vtrnk.online/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/vtrnk.online/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    client_max_body_size 300M;
+    root /home/beasty197/projects/vtrnk_radio/web;
+    index radio.html;
+    access_log /var/log/nginx/vtrnk_access.log;
+    error_log /var/log/nginx/vtrnk_error.log warn;
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:5001/socket.io/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+        keepalive_timeout 3600s;
+        access_log /var/log/nginx/socket_io.log;
+    }
+
+    location = /upload_radio_show {
+        proxy_pass http://127.0.0.1:5001/upload_radio_show;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        client_max_body_size 300M;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/upload_radio_show.log;
+        error_log /var/log/nginx/upload_radio_show_error.log debug;
+    }
+
+    location = /upload_track {
+        proxy_pass http://127.0.0.1:5001/upload_track;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        client_max_body_size 300M;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/upload_track.log;
+        error_log /var/log/nginx/upload_track_error.log debug;
+    }
+
+    location = /delete_radio_show {
+        proxy_pass http://127.0.0.1:5001/delete_radio_show;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/delete_radio_show.log;
+        error_log /var/log/nginx/delete_radio_show_error.log debug;
+    }
+
+    location = /get_cover_path {
+        proxy_pass http://127.0.0.1:5001/get_cover_path;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/get_cover_path.log;
+    }
+
+    location = /track {
+        proxy_pass http://127.0.0.1:5001/track;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/track.log;
+    }
+
+    location = /smart_skip {
+        proxy_pass http://127.0.0.1:5001/smart_skip;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/smart_skip.log;
+        error_log /var/log/nginx/smart_skip_error.log debug;
+    }
+
+    location = /skip_track {
+        proxy_pass http://127.0.0.1:5001/skip_track;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/skip_track.log;
+    }
+
+    location = /play_jingle {
+        proxy_pass http://127.0.0.1:5001/play_jingle;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/play_jingle.log;
+    }
+
+    location /schedule {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/schedule.log;
+    }
+
+    location = /telegram-mini-app.html {
+        try_files $uri $uri/ /telegram-mini-app.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/telegram_mini_app_html.log;
+    }
+
+
+
+    location /play_radio_show {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/play_radio_show.log;
+    }
+
+    location /play_playlist {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/play_playlist.log;
+    }
+
+    location = /update_show {
+        proxy_pass http://127.0.0.1:5001/update_show;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        client_max_body_size 300M;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/update_show.log;
+        error_log /var/log/nginx/update_show_error.log debug;
+    }
+
+    location = /update_track_info {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/update_track_info.log;
+        error_log /var/log/nginx/update_track_info_error.log debug;
+    }
+
+    location /monitor/ {
+        proxy_pass http://127.0.0.1:5002/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "GET, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/monitor.log;
+        error_log /var/log/nginx/monitor_error.log debug;
+    }
+
+    location = /restart_liquidsoap {
+        proxy_pass http://127.0.0.1:5002/restart_liquidsoap;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/restart_liquidsoap.log;
+        error_log /var/log/nginx/restart_liquidsoap_error.log debug;
+    }
+
+    location = /radio.html {
+        try_files $uri $uri/ /radio.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/radio_html.log;
+    }
+
+    location = /tracks.html {
+        try_files $uri $uri/ /tracks.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/tracks_html.log;
+    }
+
+    location = /schedule.html {
+        try_files $uri $uri/ /schedule.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/schedule_html.log;
+    }
+
+    location /data/ {
+        deny all;
+        return 403;
+        access_log /var/log/nginx/data.log;
+    }
+
+    location /images/ {
+        alias /home/beasty197/projects/vtrnk_radio/images/;
+        autoindex off;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/images.log;
+    }
+
+    location = /vtrnk.m3u {
+        alias /home/beasty197/projects/vtrnk_radio/web/vtrnk.m3u;
+        add_header Content-Type "audio/x-mpegurl";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/vtrnk_m3u.log;
+    }
+
+
+
+
+
+
+
+    location /css/ {
+        alias /home/beasty197/projects/vtrnk_radio/web/css/;
+        autoindex off;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/css.log;
+    }
+
+    location / {
+        try_files $uri $uri/ /radio.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/default.log;
+    }
+
+    location = /tracks {
+        proxy_pass http://127.0.0.1:5001/tracks;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/tracks.log;
+    }
+
+    location = /styles {
+        proxy_pass http://127.0.0.1:5001/styles;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/styles.log;
+    }
+
+    location = /update_style {
+        proxy_pass http://127.0.0.1:5001/update_style;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/update_style.log;
+    }
+
+    location = /current_track {
+        proxy_pass http://127.0.0.1:5001/current_track;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/current_track.log;
+    }
+
+    location = /show_current_track {
+        proxy_pass http://127.0.0.1:5003/show_current_track;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/show_current_track.log;
+    }
+
+    location = /radio_stream {
+        proxy_pass http://127.0.0.1:8000/radio_stream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/radio_stream.log;
+    }
+
+
+    
+
+
+
+
+
+
+
+
+    location = /show_stream {
+        proxy_pass http://127.0.0.1:8000/show_stream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/show_stream.log;
+    }
+
+    location = /status-json.xsl {
+        proxy_pass http://127.0.0.1:8000/status-json.xsl;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/status_json_xsl.log;
+    }
+location = /live_streams {
+        proxy_pass http://127.0.0.1:5001/live_streams;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "GET, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/live_streams.log;
+    }
+
+    location = /add_live_stream {
+        proxy_pass http://127.0.0.1:5001/add_live_stream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        client_max_body_size 300M;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/add_live_stream.log;
+        error_log /var/log/nginx/add_live_stream_error.log debug;
+    }
+
+    location = /update_live_stream {
+        proxy_pass http://127.0.0.1:5001/update_live_stream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        client_max_body_size 300M;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/update_live_stream.log;
+        error_log /var/log/nginx/update_live_stream_error.log debug;
+    }
+
+    location = /delete_live_stream {
+        proxy_pass http://127.0.0.1:5001/delete_live_stream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_method POST;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "POST, OPTIONS";
+        add_header Access-Control-Allow-Headers "Content-Type";
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/delete_live_stream.log;
+        error_log /var/log/nginx/delete_live_stream_error.log debug;
+    }
+
+
+
+    location = /video_stream {
+        proxy_pass http://127.0.0.1:8000/video_stream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/video_stream.log;
+    }
+
+    location = /radio_v2_192 {
+        proxy_pass http://127.0.0.1:8001/radio_v2_192;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/radio_v2_192.log;
+    }
+
+    location = /radio_v2_64 {
+        proxy_pass http://127.0.0.1:8001/radio_v2_64;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/radio_v2_64.log;
+    }
+
+    location = /radio_v2_32 {
+        proxy_pass http://127.0.0.1:8001/radio_v2_32;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        access_log /var/log/nginx/radio_v2_32.log;
+    }
+
+    location = /radio_v2_video {
+        proxy_pass http://127.0.0.1:8001/radio_v2_video;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS";
+        add_header Access-Control-Allow-Headers "Range, Accept";
+        access_log /var/log/nginx/radio_v2_video.log;
+    }
+
+
+    location = /radio_v2_video.flv {
+        proxy_pass http://127.0.0.1:8001/radio_v2_video.flv;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 3600s;
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS";
+        add_header Access-Control-Allow-Headers "Range, Accept";
+        access_log /var/log/nginx/radio_v2_video_flv.log;
+    }
+
+
+
+
+
+    location /hls {
+        types {
+            application/vnd.apple.mpegurl m3u8;
+            video/mp2t ts;
+        }
+        alias /home/beasty197/projects/vtrnk_radio/web/hls;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        add_header Access-Control-Allow-Origin "*";
+        add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS";
+        add_header Access-Control-Allow-Headers "Range, Accept";
+        access_log /var/log/nginx/hls.log;
+    }
+}

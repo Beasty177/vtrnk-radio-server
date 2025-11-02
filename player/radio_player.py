@@ -46,6 +46,7 @@ NEXT_TRACK_CANDIDATES = 90  # Number of candidates to select random next track f
 # Delay settings
 SMART_SKIP_DELAY = 10  # Delay in seconds for smart_skip
 RADIO_SHOW_SKIP_DELAY = 10  # Delay in seconds for radio show skip in schedule_checker and play_radio_show
+JINGLE_PAUSE_DELAY = 2  # Delay in seconds for pauses around jingles
 
 # Styles for normalization
 PREDEFINED_STYLES = [
@@ -100,6 +101,62 @@ def get_live_stream_by_code(show_code):
     except Exception as e:
         logger.error(f"Error fetching live stream by code {show_code}: {str(e)}")
         return None
+
+def get_random_jingle():
+    """Выбирает случайный джингл из БД."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT path FROM tracks WHERE track_info = 'jingle' AND status = 'available' ORDER BY RANDOM() LIMIT 1")
+        jingle = cursor.fetchone()
+        conn.close()
+        if jingle:
+            return jingle['path']
+        logger.warning("No jingles found in DB")
+        return None
+    except Exception as e:
+        logger.error(f"Error selecting random jingle: {str(e)}")
+        return None
+
+def play_with_jingles(track_path, is_scheduled=False):
+    """Воспроизводит радио-шоу с джинглами, если флаг установлен."""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT jingle_highlight FROM tracks WHERE path = ? AND track_info = 'radio_show'", (track_path,))
+        show = cursor.fetchone()
+        conn.close()
+        if not show:
+            logger.warning(f"No radio show found with path {track_path}")
+            return False
+        jingle_highlight = show['jingle_highlight']
+        if not jingle_highlight:
+            # Без джинглов — стандартный плей
+            response = liquidsoap_command(f"play_radio_show {track_path}")
+            logger.info(f"Played radio show without jingles: {track_path}, response: {response}")
+            return True
+        # С джинглами: jingle -> pause -> show -> pause -> jingle
+        jingle1 = get_random_jingle()
+        if not jingle1:
+            logger.warning("No jingle1 available, skipping jingles")
+            response = liquidsoap_command(f"play_radio_show {track_path}")
+            return True
+        response1 = liquidsoap_command(f"play_jingle {jingle1}")
+        logger.info(f"Played first jingle: {jingle1}, response: {response1}")
+        time.sleep(JINGLE_PAUSE_DELAY)
+        response_show = liquidsoap_command(f"play_radio_show {track_path}")
+        logger.info(f"Played radio show with jingles: {track_path}, response: {response_show}")
+        time.sleep(JINGLE_PAUSE_DELAY)
+        jingle2 = get_random_jingle()
+        if jingle2 and jingle2 != jingle1:  # Другой джингл, если возможно
+            response2 = liquidsoap_command(f"play_jingle {jingle2}")
+            logger.info(f"Played second jingle: {jingle2}, response: {response2}")
+        else:
+            logger.info("No second jingle available, skipping")
+        return True
+    except Exception as e:
+        logger.error(f"Error in play_with_jingles for {track_path}: {str(e)}")
+        return False
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -575,6 +632,9 @@ def update_show():
         new_artist = data.get('new_artist')
         new_title = data.get('new_title')
         new_style = data.get('new_style')
+        new_description = data.get('new_description', None)
+        new_jingle_highlight_str = data.get('new_jingle_highlight', None)
+        new_jingle_highlight = new_jingle_highlight_str == 'true' if new_jingle_highlight_str is not None else None
         if not track_path:
             logger.warning("Missing track_path in update_show request")
             return jsonify({'success': False, 'error': 'Missing track_path'}), 400
@@ -591,12 +651,18 @@ def update_show():
             update_query += "artist = ?, "
             update_params.append(new_artist)
         if new_title:
-            update_query += "title = ?, "
+            update_query += "track_title = ?, "
             update_params.append(new_title)
         if new_style:
             normalized_style = normalize_style(new_style)
             update_query += "style = ?, "
             update_params.append(normalized_style)
+        if new_description is not None:
+            update_query += "description = ?, "
+            update_params.append(new_description)
+        if new_jingle_highlight is not None:
+            update_query += "jingle_highlight = ?, "
+            update_params.append(new_jingle_highlight)
         if 'coverFile' in request.files:
             cover_file = request.files['coverFile']
             if cover_file.filename != '':
@@ -649,6 +715,26 @@ def upload_radio_show():
         os.makedirs(UPLOAD_RADIO_DIR, exist_ok=True)
         file.save(file_path)
         logger.info(f"Uploaded radio show: {file.filename} to {file_path}")
+        
+        # Add to database
+        description = request.form.get('description', '')
+        jingle_highlight_str = request.form.get('jingle_highlight', 'false')
+        jingle_highlight = jingle_highlight_str.lower() == 'true'
+        title = os.path.splitext(file.filename)[0]  # Use filename without extension as title
+        artist = 'Unknown'
+        style = 'Unknown'
+        upload_date = datetime.now().isoformat()
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO tracks (path, name, track_title, artist, style, track_info, description, jingle_highlight, upload_date, status)
+            VALUES (?, ?, ?, ?, ?, 'radio_show', ?, ?, ?, 'available')
+        """, (file_path, file.filename, title, artist, style, description, jingle_highlight, upload_date))
+        conn.commit()
+        conn.close()
+        logger.info(f"Inserted radio show into DB: {file.filename}, description='{description}', jingle_highlight={jingle_highlight}")
+        
         return "Радио-шоу успешно загружено", 200
     except Exception as e:
         logger.error(f"Error in upload_radio_show: {str(e)}")
@@ -776,7 +862,13 @@ def schedule_checker():
                         success = False
                         for attempt in range(1, 4):
                             logger.info(f"Attempt {attempt}/3 to add show {entry['track_path']} to special_queue")
-                            response = liquidsoap_command(f"play_radio_show {entry['track_path']}")
+                            # Используем новую функцию с джинглами
+                            play_success = play_with_jingles(entry['track_path'], is_scheduled=True)
+                            if play_success:
+                                success = True
+                                break
+                            else:
+                                logger.warning(f"Play failed on attempt {attempt}, retrying")
                             time.sleep(RADIO_SHOW_SKIP_DELAY)
                             skip_response = skip_normal_queue()
                             logger.info(f"Skipped normal queue after {RADIO_SHOW_SKIP_DELAY}s delay, response: {skip_response}")
@@ -1100,22 +1192,26 @@ def play_radio_show():
             if current_track == track_path:
                 logger.warning(f"Attempted to play the same track {track_path} twice consecutively")
                 return jsonify({'error': 'Cannot play the same track twice consecutively'}), 400
-            response = liquidsoap_command(f"play_radio_show {track_path}")
-            time.sleep(RADIO_SHOW_SKIP_DELAY)
-            logger.info(f"Sent to Liquidsoap: play_radio_show {track_path}, response: {response}")
-            skip_response = skip_normal_queue()
-            logger.info(f"Skipped normal queue after manual show play, response: {skip_response}")
-            artist, title, _ = get_track_metadata(track_path)
-            save_last_played_track(track_path)
-            add_track_to_queue()
-            return jsonify({
-                'success': True,
-                'response': response,
-                'skip_response': skip_response,
-                'track_path': track_path,
-                'artist': artist,
-                'title': title
-            })
+            # Используем новую функцию с джинглами
+            play_success = play_with_jingles(track_path, is_scheduled=False)
+            if play_success:
+                time.sleep(RADIO_SHOW_SKIP_DELAY)
+                logger.info(f"Sent to Liquidsoap: play_radio_show {track_path} (with jingles if flagged)")
+                skip_response = skip_normal_queue()
+                logger.info(f"Skipped normal queue after manual show play, response: {skip_response}")
+                artist, title, _ = get_track_metadata(track_path)
+                save_last_played_track(track_path)
+                add_track_to_queue()
+                return jsonify({
+                    'success': True,
+                    'response': 'Played with jingles if flagged',
+                    'skip_response': skip_response,
+                    'track_path': track_path,
+                    'artist': artist,
+                    'title': title
+                })
+            else:
+                return jsonify({'error': 'Failed to play show'}), 500
     except Exception as e:
         logger.error(f"Error in play_radio_show: {str(e)}")
         return jsonify({'error': str(e)}), 500

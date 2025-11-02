@@ -539,8 +539,8 @@
         let currentX = 0;
         let currentY = 0;
         let startTime = 0;
-        const threshold = 100; // Minimum swipe distance in pixels
-        const minHoldTime = 300; // Minimum hold time in ms for a valid swipe
+        const threshold = 70; // Minimum swipe distance in pixels
+        const minHoldTime = 200; // Minimum hold time in ms for a valid swipe
         const isMobile = window.innerWidth <= 600;
 
         if (isMobile && posterContainer) {
@@ -571,9 +571,9 @@
                     e.preventDefault();
                     container.style.transform = `translateX(${deltaX}px)`;
 
-                    if (deltaX < -30) {
+                    if (deltaX < -21) {
                         swipeHint.textContent = 'Переход к видео...';
-                    } else if (deltaX > 30) {
+                    } else if (deltaX > 21) {
                         swipeHint.textContent = 'Свайп вправо для радио (или используйте меню)';
                     }
                 }
