@@ -40,8 +40,8 @@ PLACEHOLDER_LIVE_STREAM = os.getenv('PLACEHOLDER_LIVE_STREAM', '/home/beasty197/
 # Playback settings
 MAX_HISTORY_SIZE = 90  # Maximum tracks in playback history
 PLAYBACK_MODE = "random"  # Playback mode (currently fixed as random)
-HISTORY_EXCLUDE_SIZE = 90  # Number of recent tracks to exclude from next track selection
-NEXT_TRACK_CANDIDATES = 90  # Number of candidates to select random next track from
+HISTORY_EXCLUDE_SIZE = 130  # Number of recent tracks to exclude from next track selection
+NEXT_TRACK_CANDIDATES = 130  # Number of candidates to select random next track from
 
 # Delay settings
 SMART_SKIP_DELAY = 10  # Delay in seconds for smart_skip
@@ -421,12 +421,12 @@ def get_track_metadata(track_path):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT artist, title, name, path_img FROM tracks WHERE path = ?", (track_path,))  # ИСПРАВЛЕНИЕ: title вместо track_title
+        cursor.execute("SELECT artist, track_title, name, path_img FROM tracks WHERE path = ?", (track_path,))  
         track = cursor.fetchone()
         conn.close()
         if track:
             artist = track['artist'] if track['artist'] and track['artist'].strip() else "VTRNK"
-            title = track['title'] if track['title'] and track['title'].strip() else (track['name'] if track['name'] and track['name'].strip() else "Radio Show")  # <-- Было: track['track_title']
+            title = track['track_title'] if track['track_title'] and track['track_title'].strip() else (track['name'] if track['name'] and track['name'].strip() else "Radio Show")  
             cover = track['path_img'] if track['path_img'] else "/images/placeholder2.png"
             logger.info(f"Found metadata for {track_path}: artist={artist}, title={title}")
             return artist, title, cover
@@ -650,8 +650,8 @@ def update_show():
         if new_artist:
             update_query += "artist = ?, "
             update_params.append(new_artist)
-        if new_title:  # ИСПРАВЛЕНИЕ: Обновляем title, не track_title
-            update_query += "title = ?, "  # <-- Было: track_title = ?
+        if new_title:  
+            update_query += "track_title = ?, "  
             update_params.append(new_title)
         if new_style:
             normalized_style = normalize_style(new_style)
@@ -1045,8 +1045,8 @@ def get_track_duration_endpoint():
             logger.info(f"Found duration for {track_name}: {track['duration']}")
             return jsonify({'duration': track['duration']})
         else:
-            logger.warning(f"No duration found for {track_name}")
-            return jsonify({'error': f"No duration found for {track_name}"}), 404
+            logger.warning(f"No duration found for track {track_name}")
+            return jsonify({'error': f"No duration found for track {track_name}"}), 404
     except Exception as e:
         logger.error(f"Error in get_track_duration: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -1408,6 +1408,64 @@ def delete_live_stream():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# === НОВЫЕ РОУТЫ ДЛЯ УПРАВЛЕНИЯ АУДИО СТРИМОМ ===
+
+@app.route('/toggle_audio_stream', methods=['POST'])
+def toggle_audio_stream():
+    """Включает/выключает BUTT input в Liquidsoap через Telnet"""
+    try:
+        data = request.get_json()
+        arg = data.get('arg', 'toggle')  # 'on', 'off', 'toggle'
+        password = data.get('password', '')
+
+        # При включении проверяем пароль
+        if arg == 'on' and password != 'BeastyOK':
+            logger.warning(f"Попытка включить стрим с неверным паролем: {password}")
+            return jsonify({'success': False, 'error': 'Неверный пароль'}), 403
+
+        # Отправляем команду в Liquidsoap
+        response = liquidsoap_command(f"toggle_audio_stream {arg}")
+        logger.info(f"Toggle audio stream: {arg} → {response}")
+
+        return jsonify({'success': True, 'response': response})
+    except Exception as e:
+        logger.error(f"Error in toggle_audio_stream: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/log_stop_details', methods=['POST'])
+def log_stop_details():
+    """Сохраняет имя и причину остановки стрима в лог-файл"""
+    try:
+        data = request.get_json()
+        name = data.get('name', 'Unknown')
+        reason = data.get('reason', 'No reason')
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        log_entry = f"{timestamp} - {name}: {reason}\n"
+
+        stop_log_path = os.path.join(LOGS_DIR, 'stop_log.txt')
+        with open(stop_log_path, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+
+        logger.info(f"Logged stop details: {log_entry.strip()}")
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error in log_stop_details: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/get_current_status')
+def get_current_status_route():
+    """Возвращает статус из Liquidsoap (для UI)"""
+    try:
+        status = get_current_status()
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error in get_current_status_route: {str(e)}")
+        return jsonify({}), 500
+
+
+# === ЗАПУСК СЕРВЕРА ===
 if __name__ == '__main__':
     logger.info("Starting radio player, initializing Flask server...")
     init_live_streams_db()

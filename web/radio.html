@@ -401,10 +401,10 @@
         });
 
         function togglePlay() {
-            playStopBtn.disabled = true; // Отключаем кнопку во время загрузки
+            playStopBtn.disabled = true; //  Отключаем кнопку во время загрузки
             if (isPlaying) {
                 player.pause();
-                player.src = ''; // Очищаем src для сброса буфера
+                player.src = ''; // Очищаем src для сброса буфера 
             } else {
                 // Добавляем timestamp к URL для предотвращения кэширования
                 const timestamp = Date.now();
