@@ -85,8 +85,10 @@ async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Проверяем, в чате или в личке
         is_group = update.message.chat.type in ['group', 'supergroup']
-        button_type = {'url': 'https://t.me/drum_n_bot'} if is_group else {'web_app': {'url': 'https://vtrnk.online/telegram-mini-app.html'}}
-        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", **button_type)]]
+        #button_type = {'url': 'https://t.me/drum_n_bot'} if is_group else {'web_app': {'url': 'https://vtrnk.online/telegram-mini-app.html'}}
+        #keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", **button_type)]]
+        keyboard = [[InlineKeyboardButton("🎧 Слушать радио в Telegram", web_app={"url": "https://t.me/drum_n_bot/radio"})]]
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Проверяем, радио-шоу ли это
@@ -169,8 +171,10 @@ async def monitor_podcast(context: ContextTypes.DEFAULT_TYPE):
                             cover_path = cover_data.get("cover_path", "/images/placeholder2.png")
                             file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
                             logger.info(f"Local file path for podcast: {file_path}")
-
-                        keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", url="https://t.me/drum_n_bot")]]
+                        
+                        #keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", url="https://t.me/drum_n_bot")]]
+                        keyboard = [[InlineKeyboardButton("🎧 Слушать радио в Telegram",web_app={"url": "https://t.me/drum_n_bot/radio"})]]
+                                                
                         reply_markup = InlineKeyboardMarkup(keyboard)
 
                         caption = f"Сейчас у нас в эфире радио подкаст {new_title} от {new_artist}. Подключайтесь!\nСлушай на VTRNK Radio: https://vtrnk.online"

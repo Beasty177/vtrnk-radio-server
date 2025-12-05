@@ -45,7 +45,7 @@ TRACKS_DATA_DIR = os.getenv('TRACKS_DATA_DIR')
 TEMP_DIR = os.getenv('TEMP_DIR')
 PLACEHOLDER_POSTER = os.getenv('PLACEHOLDER_POSTER')
 PLACEHOLDER_RELATIVE = os.getenv('PLACEHOLDER_RELATIVE')
-MP3_LIMIT = int(os.getenv('MP3_LIMIT', 400))
+MP3_LIMIT = int(os.getenv('MP3_LIMIT', 800))
 RADIO_SHOW_LIMIT = int(os.getenv('RADIO_SHOW_LIMIT', 20))
 
 # Проверка переменных окружения

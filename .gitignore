@@ -27,6 +27,7 @@ images/
 #Убрали из гитхаб тестовый файл ликвид соап
 # liquidsoap/
 liquidsoap/radio.liq
+liquidsoap/radio123.liq
 liquidsoap/radio_v2.liq
 liquidsoap/radio_v2.liq.bak
 liquidsoap/radio_min.liq
