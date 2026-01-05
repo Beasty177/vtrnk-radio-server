@@ -1,0 +1,215 @@
+import os
+import logging
+import logging.handlers
+from dotenv import load_dotenv
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
+from telegram.ext import Application, CommandHandler, ContextTypes
+import aiohttp
+import asyncio
+import sqlite3
+
+# === Логирование ===
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+log_path = '/home/beasty197/projects/vtrnk_radio/logs/drum_n_bot.log'
+handler = logging.handlers.RotatingFileHandler(
+    filename=log_path,
+    maxBytes=5*1024*1024,
+    backupCount=5
+)
+console_handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+class NoDebugFilter(logging.Filter):
+    def filter(self, record):
+        return record.levelno > logging.DEBUG
+
+handler.addFilter(NoDebugFilter())
+console_handler.addFilter(NoDebugFilter())
+logger.addHandler(handler)
+logger.addHandler(console_handler)
+
+# === Конфиг ===
+load_dotenv('/home/beasty197/projects/vtrnk_radio/.env')
+BOT_TOKEN = os.getenv('BOT_TOKEN_DMB')
+CHAT_ID = os.getenv('CHAT_ID')
+RADIO_SHOW_DIR = '/home/beasty197/projects/vtrnk_radio/audio/radio_show'
+BASE_DIR = '/home/beasty197/projects/vtrnk_radio'
+DB_PATH = '/home/beasty197/projects/vtrnk_radio/data/radio.db'
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def get_show_description(path):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT description FROM tracks WHERE path = ? AND track_info = 'radio_show'", (path,))
+        row = cur.fetchone()
+        conn.close()
+        return row['description'].strip() if row and row['description'] else None
+    except Exception as e:
+        logger.error(f"Error get_show_description: {e}")
+        return None
+
+def get_live_stream_description(show_code):
+    if not show_code:
+        return None, None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT description, cover_path FROM live_streams WHERE show_code = ? LIMIT 1", (show_code,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            desc = row['description'].strip() if row['description'] else None
+            cover = row['cover_path'] or '/images/placeholder_live_stream.png'
+            return desc, cover
+        return None, None
+    except Exception as e:
+        logger.error(f"Error get_live_stream_description: {e}")
+        return None, None
+
+async def send_photo_with_fallback(context, file_path, caption, reply_markup):
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        with open(file_path, 'rb') as photo:
+            await context.bot.send_photo(
+                chat_id=CHAT_ID,
+                photo=photo,
+                caption=caption,
+                reply_markup=reply_markup
+            )
+    else:
+        logger.warning(f"Cover not found: {file_path}")
+        await context.bot.send_photo(
+            chat_id=CHAT_ID,
+            photo="https://vtrnk.online/images/placeholder2.png",
+            caption=caption,
+            reply_markup=reply_markup
+        )
+
+async def radio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://vtrnk.online/track") as resp:
+                data = await resp.json()
+            artist = data[1][1] if len(data) > 1 else "VTRNK"
+            title = data[2][1] if len(data) > 2 else "Unknown Track"
+            filename = data[0][1] if len(data) > 0 else ""
+
+            async with session.get("https://vtrnk.online/get_cover_path") as resp:
+                cover = await resp.json()
+                cover_path = cover.get("cover_path", "/images/placeholder2.png")
+                file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
+
+        keyboard = [[InlineKeyboardButton(
+            "Слушать радио в Telegram",
+            web_app=WebAppInfo(url="https://vtrnk.online/telegram-mini-app.html")
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        desc = get_show_description(filename) if filename.startswith(RADIO_SHOW_DIR) else None
+        caption = f"Сейчас в эфире: {title} от {artist}\nСлушай на VTRNK Radio: https://vtrnk.online"
+        if desc:
+            caption += f"\n\n{desc}"
+
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as photo:
+                await update.message.reply_photo(photo=photo, caption=caption, reply_markup=reply_markup)
+        else:
+            await update.message.reply_photo(photo="https://vtrnk.online/images/placeholder2.png",
+                                           caption=caption, reply_markup=reply_markup)
+    except Exception as e:
+        logger.error(f"Error in /radio: {e}")
+        await update.message.reply_text("Не удалось получить трек")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args and context.args[0] == 'launch_radio':
+        keyboard = [[InlineKeyboardButton(
+            "Слушать радио в Telegram",
+            web_app=WebAppInfo(url="https://vtrnk.online/telegram-mini-app.html")
+        )]]
+        await update.message.reply_text("Запускаем VTRNK Radio!", reply_markup=InlineKeyboardMarkup(keyboard))
+
+# === ГЛАВНЫЙ МОНИТОРИНГ (подкасты + прямые эфиры) ===
+async def monitor_events(context: ContextTypes.DEFAULT_TYPE):
+    last_podcast = None
+    announced_podcast = None
+    last_live_code = None
+    announced_live_code = None
+
+    # Одна сессия на весь цикл — больше никаких "Session is closed"
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+        while True:
+            try:
+                async with session.get("https://vtrnk.online/track") as resp:
+                    data = await resp.json()
+
+                filename = data[0][1] if len(data) > 0 else ""
+                artist = data[1][1] if len(data) > 1 else "VTRNK"
+                title = data[2][1] if len(data) > 2 else "Radio Show"
+                is_live = data[4][1] if len(data) > 4 else False
+                cover_path = data[5][1] if len(data) > 5 else "/images/placeholder2.png"
+                show_code = data[6][1] if len(data) > 6 else ""
+
+                keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", url="https://t.me/drum_n_bot/radio")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                # ——— Подкасты ———
+                if filename.startswith(RADIO_SHOW_DIR) and filename != last_podcast:
+                    await asyncio.sleep(60)
+                    async with session.get("https://vtrnk.online/track") as resp:
+                        check = await resp.json()
+                        if check[0][1] == filename and filename != announced_podcast:
+                            desc = get_show_description(filename)
+                            path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
+                            caption = f"Сейчас у нас в эфире подкаст {title} от {artist}. Подключайтесь!\nСлушай на VTRNK Radio: https://vtrnk.online"
+                            if desc:
+                                caption += f"\n{desc}"
+                            await send_photo_with_fallback(context, path, caption, reply_markup)
+                            logger.info(f"Posted podcast: {title} – {artist}")
+                            announced_podcast = filename
+                    last_podcast = filename
+
+                # ——— Прямой эфир ———
+                elif is_live and show_code and show_code != last_live_code:
+                    await asyncio.sleep(60)
+                    async with session.get("https://vtrnk.online/track") as resp:
+                        check = await resp.json()
+                        check_live = check[4][1] if len(check) > 4 else False
+                        check_code = check[6][1] if len(check) > 6 else ""
+
+                    if check_live and check_code == show_code and show_code != announced_live_code:
+                        desc, db_cover = get_live_stream_description(show_code)
+                        path = f"{BASE_DIR}{db_cover}" if db_cover and db_cover.startswith("/") else f"{BASE_DIR}{cover_path}"
+                        caption = f"Сейчас в прямом эфире \n{artist} — {title}\n"
+                        if desc:
+                            caption += f"{desc}"
+                        await send_photo_with_fallback(context, path, caption, reply_markup)
+                        logger.info(f"Posted LIVE: {artist} — {title} ({show_code})")
+                        announced_live_code = show_code
+
+                    last_live_code = check_code if check_live else None
+                else:
+                    last_podcast = filename if filename.startswith(RADIO_SHOW_DIR) else last_podcast
+                    last_live_code = show_code if is_live else last_live_code
+
+            except Exception as e:
+                logger.error(f"Monitor error: {e}")
+
+            await asyncio.sleep(60)
+
+def main():
+    logger.info("Starting drum_n_bot")
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("radio", radio))
+    app.add_handler(CommandHandler("start", start))
+    app.job_queue.run_repeating(monitor_events, interval=60, first=10)
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
