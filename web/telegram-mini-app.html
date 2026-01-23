@@ -8,6 +8,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.4.0/color-thief.umd.js"></script>
+    
     <style>
         body {
             background-color: var(--tg-theme-bg-color, black);
@@ -17,56 +18,68 @@
             color: var(--tg-theme-text-color, white);
             display: flex;
             flex-direction: column;
-            min-height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;              /* ← важно: тянем на весь экран */
+            overflow: hidden;               /* ← оставляем, чтобы TG не глючил */
             transition: background-color 1.5s;
         }
+    
         .container {
-            flex: 1;
+            flex: 1;                        /* ← растягиваем контейнер */
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            padding: 5px;
+            padding: 10px 5px 80px 5px;     /* ← большой padding-bottom, чтобы кнопка не прилипала к краю */
             width: 100%;
             max-width: 400px;
             margin: 0 auto;
             position: relative;
             z-index: 1;
+            overflow-y: auto;               /*  включаем скролл только здесь */
+            -webkit-overflow-scrolling: touch; /* ← плавный скролл на iOS */
+            overscroll-behavior: contain;   /* ← не даёт "выбрасывать" приложение при скролле вниз */
         }
+    
         .logo {
             max-width: 140px;
             margin-bottom: 3px;
         }
+    
         .equalizer {
             height: 40px;
             width: 200px;
             margin-bottom: 10px;
         }
+    
         .equalizer canvas {
             width: 100%;
             height: 100%;
         }
+    
         .track-info {
             text-align: center;
             margin-bottom: 10px;
             min-height: 60px;
             overflow: visible;
         }
+    
         #now-playing {
             font-size: 16px;
             color: #ffffff;
         }
+    
         #track-artist {
             font-size: 18px;
             margin: 5px 0 0 0;
             color: #ffffff;
         }
+    
         #track-title {
             font-size: 16px;
             margin: 2px 0 0 0;
             color: #ffffff;
         }
+    
         .poster-container {
             width: 240px;
             height: 240px;
@@ -74,14 +87,16 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
-            margin-bottom: 10px;
+            margin-bottom: 20px;            /* ← чуть больше отступа */
             background-color: var(--tg-theme-secondary-bg-color, #1a1a1a);
         }
+    
         .poster {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
+    
         .play-stop-btn {
             width: 80px;
             height: 40px;
@@ -92,31 +107,56 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 10px;
+            margin-bottom: 20px;            /* ← отступ снизу */
             color: var(--tg-theme-button-text-color, white);
+            flex-shrink: 0;                 /* ← кнопка не сжимается */
         }
+    
         .play-stop-btn:hover {
             background: var(--tg-theme-button-color-hover, #555);
         }
+    
         .play-stop-btn:disabled {
             background: #666;
             cursor: not-allowed;
         }
+    
         .play-stop-btn svg {
             width: 24px;
             height: 24px;
             fill: var(--tg-theme-button-text-color, white);
         }
+    
         @media (max-width: 600px) {
             .container {
                 max-width: 320px;
+                padding: 8px 5px 100px 5px; /* ← ещё больше места снизу на маленьких экранах */
             }
+    
             .poster-container {
-                width: 240px;
-                height: 240px;
+                width: 220px;
+                height: 220px;
             }
         }
-    </style>
+    
+        /* Для очень маленьких экранов — центрируем кнопку, если совсем тесно */
+        @media (max-height: 520px) {
+            .container {
+                justify-content: center;
+                padding-bottom: 20px;
+            }
+    
+            .logo, .equalizer, .track-info, .poster-container {
+                margin-bottom: 8px;
+            }
+    
+            .play-stop-btn {
+                margin-top: 20px;
+                width: 100px;
+                height: 50px;
+            }
+        }
+    </style>        
 </head>
 <body>
     <div class="container">
