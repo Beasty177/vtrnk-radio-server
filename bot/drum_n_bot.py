@@ -32,7 +32,8 @@ if not BOT_TOKEN:
     logger.error("BOT_TOKEN_DMB не найден в .env!")
     exit(1)
 
-CHANNEL_ID = '-1001900735646'  # @vtornikshow
+#CHANNEL_ID = '-1001900735646'  # @vtornikshow пока закоментировал
+CHANNEL_ID = '-1002134999444'  #чат вторника бисти битс23 пока пусть работает как костыль, потому что наверно вернем обратно
 
 RADIO_SHOW_DIR = '/home/beasty197/projects/vtrnk_radio/audio/radio_show'
 BASE_DIR = '/home/beasty197/projects/vtrnk_radio'
