@@ -16,6 +16,11 @@ config/icecast/icecast_v2.xml
 # Full Nginx config
 config/nginx/vtrnk_radio.conf  
 config/systemd
+config/nginx/vtrnk-landing.conf
+config/nginx/vtrnk_radio.conf.save
+config/nginx/vtrnk_radio.conf.save.1
+
+
 
 data/
 data/temp/
