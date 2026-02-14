@@ -1,18 +1,40 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>VTRNK Radio</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding: 100px 20px; background: #111; color: #fff; }
-    h1 { font-size: 4em; margin-bottom: 0.2em; }
-    p { font-size: 1.4em; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VTRNK Radio</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>VTRNK RADIO</h1>
-  <p>Интернет-радио | Скоро здесь будет лендинг</p>
-  <p><a href="https://vtrnk.ru" style="color:#ff3366">vtrnk.ru</a> / <a href="https://vtrnk.com" style="color:#ff3366">vtrnk.com</a></p>
+    <div class="container">
+        <div class="logo-container">
+            <img src="images/logovtrnk.png" alt="VTRNK Radio Logo" class="logo">
+        </div>
+        <h1>VTRNK Radio</h1>
+        <p>internet radio stream 24/7</p>
+        <p>Burn Babylon • vtrnk.online</p>
+        
+        <button id="playButton" class="play-button">PLAY</button>
+
+        <!-- Ссылка на приложение -->
+        <div class="app-footer">
+            <a href="https://play.google.com/store/apps/details?id=com.vtrnk.radio&pcampaignid=web_share" 
+               target="_blank" 
+               rel="noopener noreferrer"
+               class="app-link">
+                
+                <img src="images/googleplay-badge-01-getit.width-1440.png" 
+                     alt="Get it on Google Play" 
+                     class="google-play-badge">
+                
+                <p>Listen on the go — download our app!</p>
+            </a>
+        </div>
+    </div>
+
+    <audio id="radioStream" src="https://vtrnk.online/radio_stream" preload="none" playsinline></audio>
+
+    <script src="script.js"></script>
 </body>
 </html>
