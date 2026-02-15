@@ -16,6 +16,7 @@ import pytz
 from queue import Queue, Empty
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+
 load_dotenv()
 
 # --- Settings ---
@@ -1463,6 +1464,10 @@ def get_current_status_route():
     except Exception as e:
         logger.error(f"Error in get_current_status_route: {str(e)}")
         return jsonify({}), 500
+
+
+
+
 
 
 # === ЗАПУСК СЕРВЕРА ===

@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>VTRNK Radio Schedule</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        .logo-header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .logo-header .logo {
+            max-width: 180px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        h1 {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            margin: 0 0 20px 0;
+            text-align: center;
+        }
+
+        .add-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 340px;
+            height: 56px;
+            padding: 0 40px;
+            background: #007bff;
+            color: white;
+            font-size: 1.1em;
+            font-weight: 500;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            margin: 0 0 30px 0;
+        }
+        .add-btn:hover { background: #0056b3; }
+
+        .category-container {
+            margin: 30px 0;
+        }
+
+        .category-header {
+            background: #2a2a2a;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.3em;
+        }
+        .category-header:hover { background: #333; }
+
+        .list-container {
+            padding: 20px;
+            background: #1a1a1a;
+            border-radius: 0 0 12px 12px;
+        }
+
+        #programsList, #archiveList {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 24px;
+        }
+
+        .program-card {
+            background: #222;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .program-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 10px 24px rgba(0,123,255,0.25);
+        }
+
+        .program-poster-wrapper {
+            width: 200px;
+            height: 200px;
+            margin: 16px auto 0;
+            background: #111;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+
+        .program-poster {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            object-position: center;
+            background: #111;
+        }
+
+        .program-poster-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 2em;
+            background: linear-gradient(135deg, #222, #333);
+        }
+
+        .program-info {
+            padding: 16px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .program-info .title {
+            font-size: 1.25em;
+            margin: 0;
+            color: #fff;
+            line-height: 1.3;
+        }
+        .program-info .meta {
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        .program-info .type {
+            font-size: 0.95em;
+            color: #4caf50;
+            font-weight: 500;
+        }
+        .program-info .desc {
+            font-size: 0.95em;
+            color: #ccc;
+            line-height: 1.4;
+            margin-top: auto;
+            max-height: 4.2em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Модалка */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            overflow-y: auto;
+            z-index: 1000;
+            padding: 20px 10px;
+        }
+        .modal-content {
+            background: #1a1a1a;
+            margin: auto;
+            padding: 24px;
+            border-radius: 12px;
+            width: 92%;
+            max-width: 680px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-sizing: border-box;
+            scrollbar-width: thin;
+            scrollbar-color: #555 #222;
+        }
+        .modal-content::-webkit-scrollbar { width: 8px; }
+        .modal-content::-webkit-scrollbar-track { background: #222; border-radius: 10px; }
+        .modal-content::-webkit-scrollbar-thumb { background: #555; border-radius: 10px; }
+        .modal-content::-webkit-scrollbar-thumb:hover { background: #777; }
+
+        .modal-poster-wrapper {
+            width: 300px;
+            height: 300px;
+            margin: 0 auto 20px;
+            background: #111;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+        }
+        .modal-poster {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            object-position: center;
+        }
+        .modal-poster-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 2em;
+            background: linear-gradient(135deg, #222, #333);
+        }
+
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 6px; font-weight: bold; color: #ddd; }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            background: #222;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        textarea { min-height: 100px; resize: vertical; }
+
+        .duration-selects { display: flex; gap: 12px; flex-wrap: wrap; }
+        .duration-selects select { flex: 1; min-width: 140px; }
+
+        .poster-input-wrapper {
+            border: 2px solid #ffffff;
+            border-radius: 8px;
+            padding: 12px;
+            background: #222;
+        }
+
+        .poster-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .poster-controls button {
+            flex: 1;
+            padding: 10px;
+            font-size: 1em;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .poster-upload-btn { background: #007bff; color: white; }
+        .poster-upload-btn:hover { background: #0056b3; }
+        .poster-delete-btn { background: #dc3545; color: white; }
+        .poster-delete-btn:hover { background: #c82333; }
+
+        .modal-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 30px;
+        }
+        .save-btn, .cancel-btn, .delete-program-btn {
+            padding: 12px 28px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .save-btn { background: #007bff; color: white; }
+        .save-btn:hover { background: #0056b3; }
+        .cancel-btn { background: #6c757d; color: white; }
+        .cancel-btn:hover { background: #5a6268; }
+        .delete-program-btn { background: #dc3545; color: white; }
+        .delete-program-btn:hover { background: #c82333; }
+
+        @media (max-width: 768px) {
+            .add-btn { width: 100%; min-width: auto; }
+            .modal-content { padding: 18px; width: 96%; }
+            .modal-actions { flex-direction: column; gap: 10px; }
+            #programsList, #archiveList { grid-template-columns: 1fr; }
+            .modal-poster-wrapper { width: 100%; height: 300px; }
+            .poster-controls { flex-direction: column; gap: 8px; }
+            .poster-controls button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <div class="logo-header">
+            <img src="/images/icon.png" alt="VTRNK Logo" class="logo">
+        </div>
+
+        <h1>Расписание программ</h1>
+
+        <button class="add-btn" onclick="openAddModal()">+ Добавить программу</button>
+
+        <!-- Актуальное расписание -->
+        <div class="category-container">
+            <div class="category-header" onclick="toggleCategory('programs')" style="background: #2a2a2a; color: white;">
+                <h2>Актуальное расписание (<span id="programsCount">0</span>)</h2>
+            </div>
+            <div class="list-container category-list" id="programsList" style="display: block;"></div>
+        </div>
+
+        <!-- Архив -->
+        <div class="category-container">
+            <div class="category-header" onclick="toggleCategory('archive')" style="background: #2a2a2a; color: white;">
+                <h2>Архив</h2>
+            </div>
+            <div class="list-container category-list" id="archiveList" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Модалка -->
+    <div class="modal" id="programModal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">×</span>
+            <h2 id="modalTitle">Добавить программу</h2>
+
+            <div class="modal-poster-wrapper">
+                <img id="modalPoster" class="modal-poster" src="" style="display:none;" alt="Афиша программы">
+                <div id="modalPosterPlaceholder" class="modal-poster-placeholder">Нет афиши</div>
+            </div>
+
+            <form id="programForm">
+                <div class="form-group">
+                    <label>Название события</label>
+                    <input type="text" id="eventName" required placeholder="Например: Ночной джангл">
+                </div>
+
+                <div class="form-group">
+                    <label>Дата и время начала</label>
+                    <input type="datetime-local" id="startDateTime" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Продолжительность</label>
+                    <div class="duration-selects">
+                        <select id="durationHours">
+                            <option value="0">0 часов</option>
+                            <option value="1" selected>1 час</option>
+                            <script>
+                                for(let h=2; h<=23; h++) document.write(`<option value="${h}">${h} час(ов)</option>`);
+                            </script>
+                        </select>
+                        <select id="durationMinutes">
+                            <option value="0">00 мин</option>
+                            <option value="10">10 мин</option>
+                            <option value="20">20 мин</option>
+                            <option value="30">30 мин</option>
+                            <option value="40">40 мин</option>
+                            <option value="50">50 мин</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Вид программы</label>
+                    <select id="programType" onchange="toggleCustomType()">
+                        <option value="podcast">Подкаст</option>
+                        <option value="live">Прямой эфир</option>
+                        <option value="repeat">Повтор</option>
+                        <option value="guest_mix">Guest Mix</option>
+                        <option value="custom">Свой вариант</option>
+                    </select>
+                    <input type="text" id="customType" placeholder="Введите свой вид" style="display:none; margin-top:8px;">
+                </div>
+
+                <div class="form-group">
+                    <label>Афиша (jpg/png, до 2 МБ)</label>
+                    <div class="poster-input-wrapper">
+                        <input type="file" id="posterFile" accept="image/jpeg,image/png">
+                    </div>
+                    <img id="posterPreview" class="poster-preview" src="" style="display:none;" alt="Превью афиши">
+                    <div class="poster-controls">
+                        <button type="button" class="poster-upload-btn" onclick="uploadPoster()">Загрузить фото</button>
+                        <button type="button" class="poster-delete-btn" onclick="clearPoster()">Удалить фото</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Описание программы</label>
+                    <textarea id="description"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Автор программы</label>
+                    <input type="text" id="author">
+                </div>
+
+                <div class="form-group">
+                    <label>Ссылки на соцсети автора (по одной на строку)</label>
+                    <textarea id="socialLinks" rows="3" placeholder="https://instagram.com/...&#10;https://t.me/..."></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="cancel-btn" onclick="closeModal()">Отмена</button>
+                    <button type="submit" class="save-btn">Сохранить</button>
+                    <button type="button" id="deleteProgramBtn" class="delete-program-btn" onclick="deleteProgram()" style="display:none;">Удалить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let programsData = [];
+        let currentEditId = null;
+        let currentPosterFile = null;
+
+        function toggleCategory(category) {
+            const list = document.getElementById(`${category}List`);
+            list.style.display = list.style.display === 'block' ? 'none' : 'block';
+            if (category === 'programs' && list.style.display === 'block') {
+                displayPrograms('programsList');
+            } else if (category === 'archive' && list.style.display === 'block') {
+                displayPrograms('archiveList');
+            }
+        }
+
+        async function fetchPrograms() {
+            try {
+                const resp = await fetch('/next-show', { credentials: 'include' });
+                if (!resp.ok) throw new Error('Ошибка загрузки');
+                programsData = await resp.json();
+                document.getElementById('programsCount').textContent = programsData.filter(p => {
+                    const now = new Date();
+                    const start = new Date(p.start_time);
+                    const end = new Date(start.getTime() + p.duration_minutes * 60 * 1000);
+                    return end > now;
+                }).length;
+                displayPrograms('programsList');
+                displayPrograms('archiveList');
+            } catch (err) {
+                console.error('Ошибка загрузки:', err);
+            }
+        }
+
+        function isFutureProgram(program) {
+            const now = new Date();
+            const start = new Date(program.start_time);
+            const end = new Date(start.getTime() + program.duration_minutes * 60 * 1000);
+            return end > now;
+        }
+
+        function displayPrograms(listId) {
+            const list = document.getElementById(listId);
+            if (!list) return;
+            list.innerHTML = '';
+
+            const filtered = listId === 'programsList'
+                ? programsData.filter(isFutureProgram)
+                : programsData.filter(p => !isFutureProgram(p));
+
+            filtered.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+            filtered.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'program-card';
+                card.onclick = () => openEditModal(p);
+
+                let posterHtml = p.poster_url 
+                    ? `<img class="program-poster" src="${p.poster_url}?t=${Date.now()}" alt="Афиша ${p.name}" onerror="this.replaceWith(this.nextElementSibling)">`
+                    : '';
+
+                card.innerHTML = `
+                    <div class="program-poster-wrapper">
+                        ${posterHtml}
+                        <div class="program-poster-placeholder">Нет афиши</div>
+                    </div>
+                    <div class="program-info">
+                        <h3 class="title">${p.name || 'Без названия'}</h3>
+                        <div class="meta">
+                            ${new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'medium', timeStyle: 'short'})} • 
+                            ${p.duration_minutes ? Math.floor(p.duration_minutes / 60) + 'ч ' + (p.duration_minutes % 60) + 'мин' : '—'}
+                        </div>
+                        <div class="type">${p.program_type === 'custom' ? (p.custom_type || 'Свой') : (p.program_type || '—')}</div>
+                        <p class="desc">${p.description || 'Нет описания'}</p>
+                        <p class="desc"><small>Автор: ${p.author || '—'}</small></p>
+                    </div>
+                `;
+
+                list.appendChild(card);
+            });
+
+            if (!filtered.length) {
+                list.innerHTML = '<p style="text-align:center; padding:60px 20px; color:#777; font-size:1.1em;">' +
+                    (listId === 'programsList' ? 'Нет актуальных программ' : 'Архив пуст') + '</p>';
+            }
+        }
+
+        function openAddModal() {
+            currentEditId = null;
+            document.getElementById('modalTitle').textContent = 'Добавить программу';
+            document.getElementById('programForm').reset();
+            document.getElementById('durationHours').value = '1';
+            document.getElementById('durationMinutes').value = '0';
+            document.getElementById('customType').style.display = 'none';
+            document.getElementById('posterPreview').style.display = 'none';
+            document.getElementById('modalPoster').style.display = 'none';
+            document.getElementById('modalPosterPlaceholder').style.display = 'flex';
+            currentPosterFile = null;
+            document.getElementById('deleteProgramBtn').style.display = 'none';
+            document.getElementById('programModal').style.display = 'flex';
+        }
+
+        function openEditModal(program) {
+            currentEditId = program.id;
+            document.getElementById('modalTitle').textContent = 'Редактировать программу';
+
+            document.getElementById('eventName').value = program.name || '';
+            document.getElementById('startDateTime').value = program.start_time?.slice(0,16) || '';
+
+            const totalMin = program.duration_minutes || 60;
+            const h = Math.floor(totalMin / 60);
+            const m = totalMin % 60;
+            document.getElementById('durationHours').value = h;
+            document.getElementById('durationMinutes').value = m;
+
+            let type = program.program_type || 'podcast';
+            document.getElementById('programType').value = type;
+            document.getElementById('customType').value = type === 'custom' ? (program.custom_type || '') : '';
+            toggleCustomType();
+
+            document.getElementById('description').value = program.description || '';
+            document.getElementById('author').value = program.author || '';
+            document.getElementById('socialLinks').value = program.social_links || '';
+
+            if (program.poster_url) {
+                document.getElementById('modalPoster').src = program.poster_url + '?t=' + Date.now();
+                document.getElementById('modalPoster').style.display = 'block';
+                document.getElementById('modalPosterPlaceholder').style.display = 'none';
+            } else {
+                document.getElementById('modalPoster').style.display = 'none';
+                document.getElementById('modalPosterPlaceholder').style.display = 'flex';
+            }
+
+            document.getElementById('posterPreview').style.display = 'none';
+            currentPosterFile = null;
+
+            document.getElementById('deleteProgramBtn').style.display = 'inline-block';
+            document.getElementById('programModal').style.display = 'flex';
+        }
+
+        function toggleCustomType() {
+            document.getElementById('customType').style.display = 
+                document.getElementById('programType').value === 'custom' ? 'block' : 'none';
+        }
+
+        function uploadPoster() {
+            const input = document.getElementById('posterFile');
+            if (!input.files[0]) return console.warn('Выберите изображение');
+
+            const file = input.files[0];
+            if (file.size > 2 * 1024 * 1024) return console.warn('Максимум 2 МБ');
+            if (!['image/jpeg','image/png'].includes(file.type)) return console.warn('Только JPG или PNG');
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const previewUrl = e.target.result;
+                document.getElementById('posterPreview').src = previewUrl;
+                document.getElementById('posterPreview').style.display = 'block';
+                document.getElementById('modalPoster').src = previewUrl;
+                document.getElementById('modalPoster').style.display = 'block';
+                document.getElementById('modalPosterPlaceholder').style.display = 'none';
+                currentPosterFile = file;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearPoster() {
+            document.getElementById('posterFile').value = '';
+            document.getElementById('posterPreview').style.display = 'none';
+            document.getElementById('modalPoster').style.display = 'none';
+            document.getElementById('modalPosterPlaceholder').style.display = 'flex';
+            currentPosterFile = null;
+
+            if (currentEditId) {
+                fetch(`/next-show/${currentEditId}/clear_poster`, {
+                    method: 'POST',
+                    credentials: 'include'
+                })
+                .then(resp => {
+                    if (resp.ok) console.log('Афиша очищена в базе');
+                    else console.error('Ошибка очистки афиши');
+                })
+                .catch(err => console.error('Ошибка запроса:', err));
+            }
+        }
+
+        document.getElementById('programForm').addEventListener('submit', async e => {
+            e.preventDefault();
+
+            const hours = parseInt(document.getElementById('durationHours').value) || 0;
+            const minutes = parseInt(document.getElementById('durationMinutes').value) || 0;
+            const durationMin = hours * 60 + minutes;
+
+            if (durationMin < 10) {
+                console.warn('Минимальная продолжительность — 10 минут');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('name', document.getElementById('eventName').value.trim());
+            formData.append('start_time', document.getElementById('startDateTime').value);
+            formData.append('duration_minutes', durationMin);
+            formData.append('program_type', document.getElementById('programType').value);
+            formData.append('custom_type', document.getElementById('programType').value === 'custom' ? 
+                document.getElementById('customType').value.trim() : '');
+            formData.append('description', document.getElementById('description').value.trim());
+            formData.append('author', document.getElementById('author').value.trim());
+            formData.append('social_links', document.getElementById('socialLinks').value.trim());
+
+            if (currentPosterFile) {
+                formData.append('poster', currentPosterFile);
+            }
+
+            console.log('Отправляем форму:', [...formData.entries()]);
+
+            const url = currentEditId ? `/next-show/${currentEditId}` : '/next-show';
+            const method = currentEditId ? 'PUT' : 'POST';
+
+            try {
+                const resp = await fetch(url, {
+                    method,
+                    body: formData,
+                    credentials: 'include'
+                });
+
+                if (resp.ok) {
+                    console.log(currentEditId ? 'Программа обновлена' : 'Программа добавлена');
+                    closeModal();
+                    fetchPrograms();
+                } else {
+                    const errText = await resp.text();
+                    console.error('Ошибка сервера:', resp.status, errText);
+                }
+            } catch (err) {
+                console.error('Ошибка сети:', err);
+            }
+        });
+
+        async function deleteProgram() {
+            if (!currentEditId || !confirm('Удалить программу навсегда?')) return;
+
+            try {
+                const resp = await fetch(`/next-show/${currentEditId}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+                if (resp.ok) {
+                    console.log('Программа удалена');
+                    closeModal();
+                    fetchPrograms();
+                } else {
+                    const errText = await resp.text();
+                    console.error('Ошибка удаления:', resp.status, errText);
+                }
+            } catch (err) {
+                console.error('Ошибка сети при удалении:', err);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('programModal').style.display = 'none';
+            currentEditId = null;
+            currentPosterFile = null;
+        }
+
+        fetchPrograms();
+        setInterval(fetchPrograms, 60000);
+    </script>
+</body>
+</html>
