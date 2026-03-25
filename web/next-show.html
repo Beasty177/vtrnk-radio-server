@@ -7,213 +7,119 @@
     <title>VTRNK Radio Schedule</title>
     <link rel="stylesheet" href="/css/styles.css">
     <style>
-        .logo-header {
-            text-align: center;
-            margin-bottom: 25px;
-        }
-        .logo-header .logo {
-            max-width: 180px;
-            height: auto;
-            display: block;
-            margin: 0 auto;
-        }
+        body { font-family: Arial, sans-serif; background: #111; color: #eee; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 
-        h1 {
-            background: #2a2a2a;
-            padding: 15px;
-            border-radius: 8px;
-            color: white;
-            margin: 0 0 20px 0;
-            text-align: center;
-        }
+        .logo-header { text-align: center; margin-bottom: 25px; }
+        .logo-header .logo { max-width: 180px; height: auto; }
+
+        h1 { background: #2a2a2a; padding: 15px; border-radius: 8px; color: white; text-align: center; }
 
         .add-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 340px;
-            height: 56px;
-            padding: 0 40px;
-            background: #007bff;
-            color: white;
-            font-size: 1.1em;
-            font-weight: 500;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            white-space: nowrap;
-            margin: 0 0 30px 0;
+            display: block; width: 100%; max-width: 340px; margin: 0 auto 30px;
+            height: 56px; line-height: 56px; background: #007bff; color: white;
+            font-size: 1.1em; font-weight: 500; text-align: center;
+            border: none; border-radius: 6px; cursor: pointer;
         }
         .add-btn:hover { background: #0056b3; }
 
-        .category-container {
-            margin: 30px 0;
-        }
-
+        .category-container { margin: 30px 0; }
         .category-header {
-            background: #2a2a2a;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1.3em;
+            background: #2a2a2a; color: white; padding: 12px 20px;
+            border-radius: 8px; cursor: pointer; font-size: 1.3em;
         }
         .category-header:hover { background: #333; }
 
-        .list-container {
-            padding: 20px;
+        .list-container { padding: 0; }
+
+        /* Таблица программ */
+        table.program-table {
+            width: 100%;
+            border-collapse: collapse;
             background: #1a1a1a;
-            border-radius: 0 0 12px 12px;
-        }
-
-        #programsList, #archiveList {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 24px;
-        }
-
-        .program-card {
-            background: #222;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            transition: transform 0.2s, box-shadow 0.2s;
-            cursor: pointer;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .program-card:hover {
-            transform: translateY(-6px);
-            box-shadow: 0 10px 24px rgba(0,123,255,0.25);
-        }
-
-        .program-poster-wrapper {
-            width: 200px;
-            height: 200px;
-            margin: 16px auto 0;
-            background: #111;
             border-radius: 8px;
             overflow: hidden;
-            position: relative;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
         }
-
-        .program-poster {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            object-position: center;
-            background: #111;
+        table.program-table th, table.program-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #333;
         }
-
-        .program-poster-placeholder {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #555;
-            font-size: 2em;
-            background: linear-gradient(135deg, #222, #333);
-        }
-
-        .program-info {
-            padding: 16px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .program-info .title {
-            font-size: 1.25em;
-            margin: 0;
-            color: #fff;
-            line-height: 1.3;
-        }
-        .program-info .meta {
-            font-size: 0.9em;
-            color: #aaa;
-        }
-        .program-info .type {
-            font-size: 0.95em;
-            color: #4caf50;
-            font-weight: 500;
-        }
-        .program-info .desc {
-            font-size: 0.95em;
+        table.program-table th {
+            background: #222;
+            font-weight: bold;
             color: #ccc;
-            line-height: 1.4;
-            margin-top: auto;
-            max-height: 4.2em;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        }
+        table.program-table tr {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        table.program-table tr:hover {
+            background: #2a2a2a;
+        }
+        table.program-table tr:last-child td { border-bottom: none; }
+
+        /* Разделитель дня недели (светлее фон) */
+        tr.day-separator {
+            background: #252525;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer; /* ← кликабельно */
+        }
+        tr.day-separator td {
+            text-align: left;
+            padding: 12px 16px;
+            border-bottom: 2px solid #444;
+        }
+
+        /* Пустая строка между разделителями */
+        tr.empty-row td {
+            height: 20px;
+            border: none;
+        }
+
+        /* Отступ после разделителя до первой программы дня */
+        tr.day-separator + tr.program-row td {
+            padding-top: 20px;
+        }
+
+        /* Пояснение внизу таблицы */
+        .schedule-note {
+            text-align: center;
+            color: #777;
+            font-size: 0.85em;
+            margin-top: 20px;
+            padding: 10px;
         }
 
         /* Модалка */
         .modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.85);
-            overflow-y: auto;
-            z-index: 1000;
-            padding: 20px 10px;
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+            overflow-y: auto; z-index: 1000; padding: 20px 10px;
         }
         .modal-content {
-            background: #1a1a1a;
-            margin: auto;
-            padding: 24px;
-            border-radius: 12px;
-            width: 92%;
-            max-width: 680px;
-            max-height: 90vh;
-            overflow-y: auto;
+            background: #1a1a1a; margin: auto; padding: 24px; border-radius: 12px;
+            width: 92%; max-width: 680px; max-height: 90vh; overflow-y: auto;
             box-sizing: border-box;
-            scrollbar-width: thin;
-            scrollbar-color: #555 #222;
         }
-        .modal-content::-webkit-scrollbar { width: 8px; }
-        .modal-content::-webkit-scrollbar-track { background: #222; border-radius: 10px; }
-        .modal-content::-webkit-scrollbar-thumb { background: #555; border-radius: 10px; }
-        .modal-content::-webkit-scrollbar-thumb:hover { background: #777; }
+        .modal-content h2 { margin-top: 0; }
 
         .modal-poster-wrapper {
-            width: 300px;
-            height: 300px;
-            margin: 0 auto 20px;
-            background: #111;
-            border-radius: 10px;
-            overflow: hidden;
+            width: 300px; height: 300px; margin: 0 auto 20px;
+            background: #111; border-radius: 10px; overflow: hidden;
             box-shadow: 0 4px 16px rgba(0,0,0,0.5);
         }
-        .modal-poster {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            object-position: center;
-        }
+        .modal-poster { width: 100%; height: 100%; object-fit: contain; object-position: center; }
         .modal-poster-placeholder {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #555;
-            font-size: 2em;
-            background: linear-gradient(135deg, #222, #333);
+            width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+            color: #555; font-size: 2em; background: linear-gradient(135deg, #222, #333);
         }
 
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 6px; font-weight: bold; color: #ddd; }
         input, textarea, select {
-            width: 100%;
-            padding: 10px;
-            background: #222;
-            border: 1px solid #444;
-            color: white;
-            border-radius: 6px;
-            box-sizing: border-box;
+            width: 100%; padding: 10px; background: #222; border: 1px solid #444;
+            color: white; border-radius: 6px; box-sizing: border-box;
         }
         textarea { min-height: 100px; resize: vertical; }
 
@@ -221,28 +127,15 @@
         .duration-selects select { flex: 1; min-width: 140px; }
 
         .poster-input-wrapper {
-            border: 2px solid #ffffff;
-            border-radius: 8px;
-            padding: 12px;
-            background: #222;
+            border: 2px solid #ffffff; border-radius: 8px; padding: 12px; background: #222;
         }
 
         .poster-controls {
-            display: flex;
-            gap: 10px;
-            margin-top: 12px;
+            display: flex; gap: 10px; margin-top: 12px;
         }
         .poster-controls button {
-            flex: 1;
-            padding: 10px;
-            font-size: 1em;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            text-align: center;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            flex: 1; padding: 10px; font-size: 1em; border: none; border-radius: 6px;
+            cursor: pointer; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .poster-upload-btn { background: #007bff; color: white; }
         .poster-upload-btn:hover { background: #0056b3; }
@@ -250,23 +143,17 @@
         .poster-delete-btn:hover { background: #c82333; }
 
         .modal-actions {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: flex-end;
-            gap: 12px;
-            margin-top: 30px;
+            display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 30px;
         }
-        .save-btn, .cancel-btn, .delete-program-btn {
-            padding: 12px 28px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 1em;
+        .save-btn, .cancel-btn, .copy-btn, .delete-program-btn {
+            padding: 12px 28px; border: none; border-radius: 6px; cursor: pointer; font-size: 1em;
         }
         .save-btn { background: #007bff; color: white; }
         .save-btn:hover { background: #0056b3; }
         .cancel-btn { background: #6c757d; color: white; }
         .cancel-btn:hover { background: #5a6268; }
+        .copy-btn { background: #6c757d; color: white; }
+        .copy-btn:hover { background: #5a6268; }
         .delete-program-btn { background: #dc3545; color: white; }
         .delete-program-btn:hover { background: #c82333; }
 
@@ -274,16 +161,12 @@
             .add-btn { width: 100%; min-width: auto; }
             .modal-content { padding: 18px; width: 96%; }
             .modal-actions { flex-direction: column; gap: 10px; }
-            #programsList, #archiveList { grid-template-columns: 1fr; }
-            .modal-poster-wrapper { width: 100%; height: 300px; }
-            .poster-controls { flex-direction: column; gap: 8px; }
-            .poster-controls button { width: 100%; }
+            table.program-table th, table.program-table td { font-size: 0.9em; padding: 10px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-
         <div class="logo-header">
             <img src="/images/icon.png" alt="VTRNK Logo" class="logo">
         </div>
@@ -297,7 +180,21 @@
             <div class="category-header" onclick="toggleCategory('programs')" style="background: #2a2a2a; color: white;">
                 <h2>Актуальное расписание (<span id="programsCount">0</span>)</h2>
             </div>
-            <div class="list-container category-list" id="programsList" style="display: block;"></div>
+            <div class="list-container category-list" id="programsList" style="display: block;">
+                <table class="program-table">
+                    <thead>
+                        <tr>
+                            <th>Название программы</th>
+                            <th>Автор</th>
+                            <th>Дата и время начала</th>
+                        </tr>
+                    </thead>
+                    <tbody id="programsTableBody"></tbody>
+                </table>
+                <div class="schedule-note">
+                    Дни недели начинаются в 06:00 и заканчиваются в 05:59 следующего дня (по радийному расписанию)
+                </div>
+            </div>
         </div>
 
         <!-- Архив -->
@@ -305,7 +202,18 @@
             <div class="category-header" onclick="toggleCategory('archive')" style="background: #2a2a2a; color: white;">
                 <h2>Архив</h2>
             </div>
-            <div class="list-container category-list" id="archiveList" style="display: none;"></div>
+            <div class="list-container category-list" id="archiveList" style="display: none;">
+                <table class="program-table">
+                    <thead>
+                        <tr>
+                            <th>Название программы</th>
+                            <th>Автор</th>
+                            <th>Дата и время начала</th>
+                        </tr>
+                    </thead>
+                    <tbody id="archiveTableBody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -323,7 +231,7 @@
             <form id="programForm">
                 <div class="form-group">
                     <label>Название события</label>
-                    <input type="text" id="eventName" required placeholder="Например: Ночной джангл">
+                    <input type="text" id="eventName" required placeholder="Например: Ночной джангл" maxlength="200">
                 </div>
 
                 <div class="form-group">
@@ -361,7 +269,7 @@
                         <option value="guest_mix">Guest Mix</option>
                         <option value="custom">Свой вариант</option>
                     </select>
-                    <input type="text" id="customType" placeholder="Введите свой вид" style="display:none; margin-top:8px;">
+                    <input type="text" id="customType" placeholder="Введите свой вид" maxlength="200" style="display:none; margin-top:8px;">
                 </div>
 
                 <div class="form-group">
@@ -378,21 +286,22 @@
 
                 <div class="form-group">
                     <label>Описание программы</label>
-                    <textarea id="description"></textarea>
+                    <textarea id="description" maxlength="1000"></textarea>
                 </div>
 
                 <div class="form-group">
                     <label>Автор программы</label>
-                    <input type="text" id="author">
+                    <input type="text" id="author" maxlength="200">
                 </div>
 
                 <div class="form-group">
                     <label>Ссылки на соцсети автора (по одной на строку)</label>
-                    <textarea id="socialLinks" rows="3" placeholder="https://instagram.com/...&#10;https://t.me/..."></textarea>
+                    <textarea id="socialLinks" rows="3" maxlength="1000" placeholder="https://instagram.com/...&#10;https://t.me/..."></textarea>
                 </div>
 
                 <div class="modal-actions">
                     <button type="button" class="cancel-btn" onclick="closeModal()">Отмена</button>
+                    <button type="button" class="copy-btn" onclick="copyProgram()">Копировать</button>
                     <button type="submit" class="save-btn">Сохранить</button>
                     <button type="button" id="deleteProgramBtn" class="delete-program-btn" onclick="deleteProgram()" style="display:none;">Удалить</button>
                 </div>
@@ -404,6 +313,7 @@
         let programsData = [];
         let currentEditId = null;
         let currentPosterFile = null;
+        let existingPosterUrl = null;
 
         function toggleCategory(category) {
             const list = document.getElementById(`${category}List`);
@@ -420,12 +330,7 @@
                 const resp = await fetch('/next-show', { credentials: 'include' });
                 if (!resp.ok) throw new Error('Ошибка загрузки');
                 programsData = await resp.json();
-                document.getElementById('programsCount').textContent = programsData.filter(p => {
-                    const now = new Date();
-                    const start = new Date(p.start_time);
-                    const end = new Date(start.getTime() + p.duration_minutes * 60 * 1000);
-                    return end > now;
-                }).length;
+                document.getElementById('programsCount').textContent = programsData.filter(isFutureProgram).length;
                 displayPrograms('programsList');
                 displayPrograms('archiveList');
             } catch (err) {
@@ -436,14 +341,47 @@
         function isFutureProgram(program) {
             const now = new Date();
             const start = new Date(program.start_time);
-            const end = new Date(start.getTime() + program.duration_minutes * 60 * 1000);
+            const end = new Date(start.getTime() + (program.duration_minutes || 0) * 60000);
             return end > now;
         }
 
+        function getWeekStart(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = day === 0 ? -6 : 1 - day;
+            const monday = new Date(d);
+            monday.setDate(d.getDate() + diff);
+            monday.setHours(6, 0, 0, 0);
+            return monday;
+        }
+
+        function getDayKey(dateStr) {
+            const d = new Date(dateStr);
+            let dayKey = d.toISOString().split('T')[0];
+
+            if (d.getHours() < 6) {
+                const prev = new Date(d);
+                prev.setDate(prev.getDate() - 1);
+                dayKey = prev.toISOString().split('T')[0];
+            }
+
+            return dayKey;
+        }
+
+        function getDayName(dateStr) {
+            const daysRu = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+            const d = new Date(dateStr);
+            let dayIndex = d.getDay();
+            if (d.getHours() < 6) {
+                dayIndex = (dayIndex - 1 + 7) % 7;
+            }
+            return daysRu[dayIndex];
+        }
+
         function displayPrograms(listId) {
-            const list = document.getElementById(listId);
-            if (!list) return;
-            list.innerHTML = '';
+            const tbody = document.getElementById(listId === 'programsList' ? 'programsTableBody' : 'archiveTableBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
 
             const filtered = listId === 'programsList'
                 ? programsData.filter(isFutureProgram)
@@ -451,43 +389,146 @@
 
             filtered.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
 
-            filtered.forEach(p => {
-                const card = document.createElement('div');
-                card.className = 'program-card';
-                card.onclick = () => openEditModal(p);
+            if (listId === 'programsList') {
+                // Текущая неделя — всегда показываем разделители с понедельника
+                const now = new Date();
+                let currentMonday = getWeekStart(now);
+                let weekEnd = new Date(currentMonday);
+                weekEnd.setDate(currentMonday.getDate() + 7);
+                weekEnd.setHours(5, 59, 59, 999);
 
-                let posterHtml = p.poster_url 
-                    ? `<img class="program-poster" src="${p.poster_url}?t=${Date.now()}" alt="Афиша ${p.name}" onerror="this.replaceWith(this.nextElementSibling)">`
-                    : '';
+                for (let i = 0; i < 7; i++) {
+                    const dayDate = new Date(currentMonday);
+                    dayDate.setDate(currentMonday.getDate() + i);
+                    const dayKey = dayDate.toISOString().split('T')[0];
+                    const dayName = getDayName(dayDate.toISOString());
 
-                card.innerHTML = `
-                    <div class="program-poster-wrapper">
-                        ${posterHtml}
-                        <div class="program-poster-placeholder">Нет афиши</div>
-                    </div>
-                    <div class="program-info">
-                        <h3 class="title">${p.name || 'Без названия'}</h3>
-                        <div class="meta">
-                            ${new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'medium', timeStyle: 'short'})} • 
-                            ${p.duration_minutes ? Math.floor(p.duration_minutes / 60) + 'ч ' + (p.duration_minutes % 60) + 'мин' : '—'}
-                        </div>
-                        <div class="type">${p.program_type === 'custom' ? (p.custom_type || 'Свой') : (p.program_type || '—')}</div>
-                        <p class="desc">${p.description || 'Нет описания'}</p>
-                        <p class="desc"><small>Автор: ${p.author || '—'}</small></p>
-                    </div>
-                `;
+                    // Разделитель
+                    const separator = document.createElement('tr');
+                    separator.className = 'day-separator';
+                    separator.onclick = () => openAddModalWithDate(dayDate); // ← клик открывает модалку с датой дня
+                    separator.innerHTML = `<td colspan="3">${dayName} — ${dayDate.toLocaleDateString('ru-RU')}</td>`;
+                    tbody.appendChild(separator);
 
-                list.appendChild(card);
-            });
+                    // Пустая строка после разделителя
+                    const emptyRow = document.createElement('tr');
+                    emptyRow.className = 'empty-row';
+                    emptyRow.innerHTML = '<td colspan="3"></td>';
+                    tbody.appendChild(emptyRow);
 
-            if (!filtered.length) {
-                list.innerHTML = '<p style="text-align:center; padding:60px 20px; color:#777; font-size:1.1em;">' +
-                    (listId === 'programsList' ? 'Нет актуальных программ' : 'Архив пуст') + '</p>';
+                    // Программы этого дня
+                    const dayPrograms = filtered.filter(p => getDayKey(p.start_time) === dayKey);
+                    dayPrograms.forEach(p => {
+                        const row = document.createElement('tr');
+                        row.className = 'program-row';
+                        row.onclick = () => openEditModal(p);
+
+                        const startStr = new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'});
+
+                        row.innerHTML = `
+                            <td>${p.name || 'Без названия'}</td>
+                            <td>${p.author || '—'}</td>
+                            <td>${startStr}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+
+                // Программы дальше недели — только с разделителями по дням
+                const futurePrograms = filtered.filter(p => new Date(p.start_time) > weekEnd);
+
+                if (futurePrograms.length > 0) {
+                    let prevDayKey = null;
+
+                    futurePrograms.forEach(p => {
+                        const dayKey = getDayKey(p.start_time);
+
+                        if (dayKey !== prevDayKey) {
+                            const separator = document.createElement('tr');
+                            separator.className = 'day-separator';
+                            separator.innerHTML = `<td colspan="3">${getDayName(p.start_time)} — ${new Date(dayKey).toLocaleDateString('ru-RU')}</td>`;
+                            tbody.appendChild(separator);
+
+                            const emptyRow = document.createElement('tr');
+                            emptyRow.className = 'empty-row';
+                            emptyRow.innerHTML = '<td colspan="3"></td>';
+                            tbody.appendChild(emptyRow);
+
+                            prevDayKey = dayKey;
+                        }
+
+                        const row = document.createElement('tr');
+                        row.className = 'program-row';
+                        row.onclick = () => openEditModal(p);
+
+                        const startStr = new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'});
+
+                        row.innerHTML = `
+                            <td>${p.name || 'Без названия'}</td>
+                            <td>${p.author || '—'}</td>
+                            <td>${startStr}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+            } else {
+                // Архив — обычные разделители только по дням с программами
+                let prevDayKey = null;
+
+                filtered.forEach(p => {
+                    const dayKey = getDayKey(p.start_time);
+
+                    if (dayKey !== prevDayKey) {
+                        const separator = document.createElement('tr');
+                        separator.className = 'day-separator';
+                        separator.innerHTML = `<td colspan="3">${getDayName(p.start_time)} — ${new Date(dayKey).toLocaleDateString('ru-RU')}</td>`;
+                        tbody.appendChild(separator);
+
+                        const emptyRow = document.createElement('tr');
+                        emptyRow.className = 'empty-row';
+                        emptyRow.innerHTML = '<td colspan="3"></td>';
+                        tbody.appendChild(emptyRow);
+
+                        prevDayKey = dayKey;
+                    }
+
+                    const row = document.createElement('tr');
+                    row.className = 'program-row';
+                    row.onclick = () => openEditModal(p);
+
+                    const startStr = new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'});
+
+                    row.innerHTML = `
+                        <td>${p.name || 'Без названия'}</td>
+                        <td>${p.author || '—'}</td>
+                        <td>${startStr}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
             }
+
+            if (!filtered.length && listId === 'archive') {
+                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:40px; color:#777;">Архив пуст</td></tr>`;
+            }
+        }
+
+        // Открытие модалки добавления с предустановленной датой дня
+        function openAddModalWithDate(dayDate) {
+            openAddModal();
+
+            // Устанавливаем дату дня (18:00 по умолчанию)
+            const year = dayDate.getFullYear();
+            const month = String(dayDate.getMonth() + 1).padStart(2, '0');
+            const day = String(dayDate.getDate()).padStart(2, '0');
+            const defaultTime = `${year}-${month}-${day}T18:00`;
+            document.getElementById('startDateTime').value = defaultTime;
+
+            document.getElementById('modalTitle').textContent = 'Добавить программу на ' + dayDate.toLocaleDateString('ru-RU');
         }
 
         function openAddModal() {
             currentEditId = null;
+            existingPosterUrl = null;
             document.getElementById('modalTitle').textContent = 'Добавить программу';
             document.getElementById('programForm').reset();
             document.getElementById('durationHours').value = '1';
@@ -503,6 +544,7 @@
 
         function openEditModal(program) {
             currentEditId = program.id;
+            existingPosterUrl = program.poster_url || null;
             document.getElementById('modalTitle').textContent = 'Редактировать программу';
 
             document.getElementById('eventName').value = program.name || '';
@@ -566,6 +608,8 @@
         }
 
         function clearPoster() {
+            if (!confirm('Удалить афишу?')) return;
+
             document.getElementById('posterFile').value = '';
             document.getElementById('posterPreview').style.display = 'none';
             document.getElementById('modalPoster').style.display = 'none';
@@ -588,6 +632,33 @@
         document.getElementById('programForm').addEventListener('submit', async e => {
             e.preventDefault();
 
+            const name = document.getElementById('eventName').value.trim();
+            const author = document.getElementById('author').value.trim();
+            const description = document.getElementById('description').value.trim();
+            const customType = document.getElementById('customType').value.trim();
+            const socialLinks = document.getElementById('socialLinks').value.trim();
+
+            if (name.length > 200) {
+                alert('Название события не может превышать 200 символов');
+                return;
+            }
+            if (author.length > 200) {
+                alert('Имя автора не может превышать 200 символов');
+                return;
+            }
+            if (description.length > 1000) {
+                alert('Описание не может превышать 1000 символов');
+                return;
+            }
+            if (customType.length > 1000) {
+                alert('Свой вариант не может превышать 1000 символов');
+                return;
+            }
+            if (socialLinks.length > 1000) {
+                alert('Ссылки не могут превышать 1000 символов');
+                return;
+            }
+
             const hours = parseInt(document.getElementById('durationHours').value) || 0;
             const minutes = parseInt(document.getElementById('durationMinutes').value) || 0;
             const durationMin = hours * 60 + minutes;
@@ -598,15 +669,18 @@
             }
 
             const formData = new FormData();
-            formData.append('name', document.getElementById('eventName').value.trim());
+            formData.append('name', name);
             formData.append('start_time', document.getElementById('startDateTime').value);
             formData.append('duration_minutes', durationMin);
             formData.append('program_type', document.getElementById('programType').value);
-            formData.append('custom_type', document.getElementById('programType').value === 'custom' ? 
-                document.getElementById('customType').value.trim() : '');
-            formData.append('description', document.getElementById('description').value.trim());
-            formData.append('author', document.getElementById('author').value.trim());
-            formData.append('social_links', document.getElementById('socialLinks').value.trim());
+            formData.append('custom_type', document.getElementById('programType').value === 'custom' ? customType : '');
+            formData.append('description', description);
+            formData.append('author', author);
+            formData.append('social_links', socialLinks);
+
+            if (!currentPosterFile && existingPosterUrl) {
+                formData.append('poster_url', existingPosterUrl);
+            }
 
             if (currentPosterFile) {
                 formData.append('poster', currentPosterFile);
@@ -638,7 +712,7 @@
         });
 
         async function deleteProgram() {
-            if (!currentEditId || !confirm('Удалить программу навсегда?')) return;
+            if (!confirm('Удалить программу навсегда?')) return;
 
             try {
                 const resp = await fetch(`/next-show/${currentEditId}`, {
@@ -658,14 +732,54 @@
             }
         }
 
+        function copyProgram() {
+            if (!currentEditId) {
+                alert('Копировать можно только существующую программу');
+                return;
+            }
+
+            const program = programsData.find(p => p.id === currentEditId);
+            if (!program) return;
+
+            openAddModal();
+
+            document.getElementById('eventName').value = program.name || '';
+            document.getElementById('durationHours').value = Math.floor(program.duration_minutes / 60) || 1;
+            document.getElementById('durationMinutes').value = (program.duration_minutes % 60) || 0;
+
+            let type = program.program_type || 'podcast';
+            document.getElementById('programType').value = type;
+            document.getElementById('customType').value = type === 'custom' ? (program.custom_type || '') : '';
+            toggleCustomType();
+
+            document.getElementById('description').value = program.description || '';
+            document.getElementById('author').value = program.author || '';
+            document.getElementById('socialLinks').value = program.social_links || '';
+
+            if (program.poster_url) {
+                document.getElementById('modalPoster').src = program.poster_url + '?t=' + Date.now();
+                document.getElementById('modalPoster').style.display = 'block';
+                document.getElementById('modalPosterPlaceholder').style.display = 'none';
+                existingPosterUrl = program.poster_url;
+            } else {
+                document.getElementById('modalPoster').style.display = 'none';
+                document.getElementById('modalPosterPlaceholder').style.display = 'flex';
+                existingPosterUrl = null;
+            }
+
+            document.getElementById('deleteProgramBtn').style.display = 'none';
+            document.getElementById('modalTitle').textContent = 'Добавить программу (скопировано)';
+            console.log('Форма заполнена копией программы (без даты, афиша сохранена)');
+        }
+
         function closeModal() {
             document.getElementById('programModal').style.display = 'none';
             currentEditId = null;
             currentPosterFile = null;
+            existingPosterUrl = null;
         }
 
         fetchPrograms();
-        setInterval(fetchPrograms, 60000);
     </script>
 </body>
 </html>

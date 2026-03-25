@@ -47,25 +47,12 @@ def get_all_programs():
     conn.close()
     return [dict(row) for row in rows]
 
-def add_program(data, poster_file=None):
+def add_program(data):
     """
-    Добавляет новую программу.
-    data — словарь из формы
-    poster_file — объект файла из request.files (если есть)
+    Добавляет новую программу из словаря data.
+    poster_url берётся напрямую из data['poster_url'] — для копирования/редактирования.
+    Если нужен новый файл — он должен обрабатываться в schedule_server.py
     """
-    poster_url = None
-    if poster_file and poster_file.filename:
-        ext = os.path.splitext(poster_file.filename)[1].lower()
-        if ext not in ['.jpg', '.jpeg', '.png']:
-            raise ValueError("Только jpg/png")
-        if poster_file.content_length > 2 * 1024 * 1024:
-            raise ValueError("Файл больше 2 МБ")
-
-        filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{os.urandom(4).hex()}{ext}"
-        save_path = os.path.join(COVERS_DIR, filename)
-        poster_file.save(save_path)
-        poster_url = f'/images/schedule_covers/{filename}'
-
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -74,32 +61,24 @@ def add_program(data, poster_file=None):
             description, author, social_links, poster_url
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        data['name'],
-        data['start_time'],
-        data['duration_minutes'],
-        data['program_type'],
+        data.get('name'),
+        data.get('start_time'),
+        data.get('duration_minutes', 0),
+        data.get('program_type'),
         data.get('custom_type'),
         data.get('description'),
         data.get('author'),
         data.get('social_links'),
-        poster_url
+        data.get('poster_url')  # ← берём poster_url из data (главный фикс для копирования!)
     ))
     new_id = cursor.lastrowid
     conn.commit()
     conn.close()
+    print(f"Добавлена программа ID {new_id} с poster_url: {data.get('poster_url')}")
     return new_id
 
-def update_program(program_id, data, poster_file=None):
-    """Обновляет существующую программу"""
-    poster_url = None
-    if poster_file and poster_file.filename:
-        # можно добавить логику удаления старой афиши, если нужно
-        ext = os.path.splitext(poster_file.filename)[1].lower()
-        filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{os.urandom(4).hex()}{ext}"
-        save_path = os.path.join(COVERS_DIR, filename)
-        poster_file.save(save_path)
-        poster_url = f'/images/schedule_covers/{filename}'
-
+def update_program(program_id, data):
+    """Обновляет существующую программу из словаря data"""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -108,19 +87,20 @@ def update_program(program_id, data, poster_file=None):
             description = ?, author = ?, social_links = ?, poster_url = ?
         WHERE id = ?
     ''', (
-        data['name'],
-        data['start_time'],
-        data['duration_minutes'],
-        data['program_type'],
+        data.get('name'),
+        data.get('start_time'),
+        data.get('duration_minutes', 0),
+        data.get('program_type'),
         data.get('custom_type'),
         data.get('description'),
         data.get('author'),
         data.get('social_links'),
-        poster_url or data.get('poster_url'),  # если новый файл не загружен — оставляем старый
+        data.get('poster_url'),  # ← берём poster_url из data
         program_id
     ))
     conn.commit()
     conn.close()
+    print(f"Обновлена программа ID {program_id} с poster_url: {data.get('poster_url')}")
 
 def delete_program(program_id):
     """Удаляет программу по id"""

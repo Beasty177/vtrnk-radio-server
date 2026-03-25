@@ -61,12 +61,13 @@ def api_add_program():
             'custom_type': request.form.get('custom_type') or None,
             'description': request.form.get('description'),
             'author': request.form.get('author'),
-            'social_links': request.form.get('social_links')
+            'social_links': request.form.get('social_links'),
+            'poster_url': request.form.get('poster_url')  # ← главное: берём из формы (для копирования!)
         }
 
-        logger.info(f"Received form data: {data}")
+        logger.info(f"Полученные данные из формы: {data}")
 
-        poster_url = None
+        # Если загружен новый файл — он приоритетнее
         if 'poster' in request.files:
             file = request.files['poster']
             if file and allowed_file(file.filename):
@@ -75,18 +76,19 @@ def api_add_program():
                 save_filename = f"{timestamp}_{filename}"
                 save_path = os.path.join(COVERS_DIR, save_filename)
                 file.save(save_path)
-                poster_url = f'/images/schedule_covers/{save_filename}'
-                logger.info(f"Poster saved: {poster_url}")
+                data['poster_url'] = f'/images/schedule_covers/{save_filename}'
+                logger.info(f"Новый файл афиши сохранён: {data['poster_url']}")
             else:
-                logger.warning("Invalid poster file")
+                logger.warning("Неверный файл афиши, игнорируем")
 
-        data['poster_url'] = poster_url
+        logger.info(f"Итоговый poster_url перед сохранением: {data.get('poster_url')}")
 
         new_id = add_program(data)
-        logger.info(f"Program added, ID: {new_id}")
+        logger.info(f"Программа добавлена, ID: {new_id}, poster_url в базе: {data.get('poster_url')}")
+
         return jsonify({'id': new_id, 'status': 'created'}), 201
     except Exception as e:
-        logger.error(f"POST /next-show error: {str(e)}")
+        logger.error(f"POST /next-show ошибка: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/next-show/<int:id>', methods=['PUT'])
@@ -101,11 +103,11 @@ def api_update_program(id):
             'custom_type': request.form.get('custom_type') or None,
             'description': request.form.get('description'),
             'author': request.form.get('author'),
-            'social_links': request.form.get('social_links'),
-            'poster_url': None  # будет перезаписано если новый файл
+            'social_links': request.form.get('social_links')
         }
 
-        poster_url = None
+        poster_url = request.form.get('poster_url')  # ← читаем старый URL
+
         if 'poster' in request.files:
             file = request.files['poster']
             if file and allowed_file(file.filename):
@@ -116,11 +118,8 @@ def api_update_program(id):
                 file.save(save_path)
                 poster_url = f'/images/schedule_covers/{save_filename}'
                 logger.info(f"Updated poster: {poster_url}")
-            else:
-                logger.warning("Invalid poster file on update")
 
-        if poster_url:
-            data['poster_url'] = poster_url
+        data['poster_url'] = poster_url
 
         update_program(id, data)
         logger.info(f"Program {id} updated")
