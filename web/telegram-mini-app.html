@@ -18,26 +18,26 @@
             color: var(--tg-theme-text-color, white);
             display: flex;
             flex-direction: column;
-            min-height: 100vh;              /* ← важно: тянем на весь экран */
-            overflow: hidden;               /* ← оставляем, чтобы TG не глючил */
+            min-height: 100vh;
+            overflow: hidden;
             transition: background-color 1.5s;
         }
     
         .container {
-            flex: 1;                        /* ← растягиваем контейнер */
+            flex: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            padding: 10px 5px 80px 5px;     /* ← большой padding-bottom, чтобы кнопка не прилипала к краю */
+            padding: 10px 5px 80px 5px;
             width: 100%;
             max-width: 400px;
             margin: 0 auto;
             position: relative;
             z-index: 1;
-            overflow-y: auto;               /*  включаем скролл только здесь */
-            -webkit-overflow-scrolling: touch; /* ← плавный скролл на iOS */
-            overscroll-behavior: contain;   /* ← не даёт "выбрасывать" приложение при скролле вниз */
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
         }
     
         .logo {
@@ -87,7 +87,7 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
-            margin-bottom: 20px;            /* ← чуть больше отступа */
+            margin-bottom: 20px;
             background-color: var(--tg-theme-secondary-bg-color, #1a1a1a);
         }
     
@@ -107,9 +107,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 20px;            /* ← отступ снизу */
+            margin-bottom: 20px;
             color: var(--tg-theme-button-text-color, white);
-            flex-shrink: 0;                 /* ← кнопка не сжимается */
+            flex-shrink: 0;
         }
     
         .play-stop-btn:hover {
@@ -130,7 +130,7 @@
         @media (max-width: 600px) {
             .container {
                 max-width: 320px;
-                padding: 8px 5px 100px 5px; /* ← ещё больше места снизу на маленьких экранах */
+                padding: 8px 5px 100px 5px;
             }
     
             .poster-container {
@@ -139,7 +139,6 @@
             }
         }
     
-        /* Для очень маленьких экранов — центрируем кнопку, если совсем тесно */
         @media (max-height: 520px) {
             .container {
                 justify-content: center;
@@ -187,20 +186,34 @@
         document.body.style.backgroundColor = tg.themeParams.bg_color || 'black';
 
         const player = document.getElementById('player');
+        
+        // === ДЖИНГЛ ===
+        const jinglePlayer = document.createElement('audio');
+        jinglePlayer.id = 'jingle';
+        jinglePlayer.src = '/jingle-start.mp3';
+        jinglePlayer.preload = 'auto';
+        jinglePlayer.playsinline = true;
+        document.body.appendChild(jinglePlayer);
+
         const trackArtist = document.getElementById('track-artist');
         const trackTitle = document.getElementById('track-title');
         const trackPoster = document.getElementById('track-poster');
         const playStopBtn = document.getElementById('play-stop');
         const playIcon = document.getElementById('play-icon');
         const stopIcon = document.getElementById('stop-icon');
+        
         let isPlaying = false;
+        let isJinglePlaying = false;
+        let streamPreloaded = false;
 
         let lastTrackData = {
             artist: "VTRNK",
             title: "Radio Show",
-            coverPath: "/images/placeholder.png"
+            coverPath: "/images/placeholder.png",
+            album: "Radio VTRNK Stream"
         };
 
+        // Equalizer
         const canvas = document.getElementById('equalizer');
         const ctx = canvas.getContext('2d');
         canvas.width = 200;
@@ -220,7 +233,7 @@
             let x = 0;
             for (let i = 0; i < barCount; i++) {
                 let bar = bars[i];
-                if (player.paused) {
+                if (player.paused && !isJinglePlaying) {
                     bar.height = 5;
                 } else {
                     bar.height += bar.speed;
@@ -236,46 +249,73 @@
         drawEqualizer();
 
         player.addEventListener('error', (e) => {
-            console.error("Ошибка воспроизведения:", e);
-            isPlaying = false;
-            playIcon.style.display = 'block';
-            stopIcon.style.display = 'none';
-            playStopBtn.disabled = false;
+            console.error("Ошибка стрима:", e);
+            resetUI();
         });
         player.addEventListener('play', () => {
-            console.log("Воспроизведение начато");
+            console.log("Стрим запущен");
             playIcon.style.display = 'none';
             stopIcon.style.display = 'block';
             isPlaying = true;
+            isJinglePlaying = false;
             playStopBtn.disabled = false;
         });
         player.addEventListener('pause', () => {
-            console.log("Воспроизведение приостановлено");
+            console.log("Стрим остановлен");
+            resetUI();
+        });
+
+        function resetUI() {
             playIcon.style.display = 'block';
             stopIcon.style.display = 'none';
             isPlaying = false;
+            isJinglePlaying = false;
             playStopBtn.disabled = false;
-        });
+        }
 
         function togglePlay() {
-            playStopBtn.disabled = true; // Отключаем кнопку во время загрузки
+            playStopBtn.disabled = true;
             if (isPlaying) {
                 player.pause();
-                player.src = ''; // Очищаем src для сброса буфера
-            } else {
+                player.src = '';
+                jinglePlayer.pause();
+                resetUI();
+                streamPreloaded = false;
+                return;
+            }
+
+            // Параллельная предзагрузка стрима
+            if (!streamPreloaded) {
                 const timestamp = Date.now();
                 player.src = `/radio_stream?t=${timestamp}`;
                 player.load();
-                player.play().then(() => {
-                    console.log("Стрим успешно запущен");
-                }).catch(err => {
-                    console.error("Ошибка воспроизведения:", err);
-                    isPlaying = false;
-                    playIcon.style.display = 'block';
-                    stopIcon.style.display = 'none';
-                    playStopBtn.disabled = false;
-                });
+                streamPreloaded = true;
+                console.log("Начат preload стрима в фоне");
             }
+
+            // Запуск джингла
+            isJinglePlaying = true;
+            jinglePlayer.currentTime = 0;
+            jinglePlayer.play().catch(err => {
+                console.error("Ошибка джингла:", err);
+                startStream();
+            });
+
+            const onJingleEnd = () => {
+                jinglePlayer.removeEventListener('ended', onJingleEnd);
+                isJinglePlaying = false;
+                startStream();
+            };
+            jinglePlayer.addEventListener('ended', onJingleEnd);
+        }
+
+        function startStream() {
+            player.play().then(() => {
+                console.log("Стрим запущен сразу после джингла");
+            }).catch(err => {
+                console.error("Ошибка play стрима:", err);
+                resetUI();
+            });
         }
 
         playStopBtn.addEventListener('click', togglePlay);
@@ -324,10 +364,7 @@
                     lastTrackData.album = dataDict.album || "Radio VTRNK Stream";
 
                     fetch('/get_cover_path')
-                        .then(response => {
-                            console.log("Fetch /get_cover_path response:", response.status);
-                            return response.json();
-                        })
+                        .then(response => response.json())
                         .then(coverData => {
                             console.log("Fetched cover data:", coverData);
                             lastTrackData.coverPath = coverData.cover_path || "/images/placeholder.png";
