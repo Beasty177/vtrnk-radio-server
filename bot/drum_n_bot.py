@@ -72,7 +72,7 @@ def get_live_stream_description(show_code):
 async def post_to_channel(context, cover_path: str, caption_text: str):
     keyboard = [[InlineKeyboardButton("Слушать радио в Telegram", url="https://t.me/drum_n_bot/radio")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    full_caption = f"{caption_text}\n\n[Слушать радио в Telegram](https://t.me/drum_n_bot/radio)"
+    full_caption = f"{caption_text}\n\n [Donation](https://t.me/rupor_events_bot?startapp=21547)"
     file_path = f"{BASE_DIR}{cover_path}" if cover_path.startswith("/") else cover_path
 
     try:
@@ -197,11 +197,11 @@ async def monitor_events(context: ContextTypes.DEFAULT_TYPE):
 
                         if check_file == filename and filename != announced_podcast:
                             desc = get_show_description(filename)
-                            cap = f"Новый подкаст!\n*{title}* от {artist}"
+                            cap = f"Сейчас в эфире!\n*{title}* от {artist}"
                             if desc:
                                 cap += f"\n\n{desc}"
                             await post_to_channel(context, cover_path, cap)
-                            logger.info(f"ПОДКАСТ ОПУБЛИКОВАН: {title} — {artist}")
+                            logger.info(f"Радио шоу в записи ОПУБЛИКОВАНО: {title} — {artist}")
                             announced_podcast = filename
                         else:
                             logger.warning(f"Подкаст НЕ опубликован: сменился файл или уже был → было: {os.path.basename(filename)}, стало: {os.path.basename(check_file)}")
