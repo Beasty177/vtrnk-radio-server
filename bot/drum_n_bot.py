@@ -256,16 +256,34 @@ async def monitor_events(context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(60)
 
 def main():
-    logger.info("Запуск drum_n_bot → постим только в @vtornikshow")
-    app = Application.builder().token(BOT_TOKEN).build()
+    logger.info("Запуск drum_n_bot с прокси (proxy6.net)")
 
-    app.add_handler(CommandHandler("radio", radio))
-    app.add_handler(CommandHandler("start", start))
+    PROXY_URL = os.getenv('PROXY_URL')
+    
+    if PROXY_URL:
+        logger.info("Используем прокси: [HIDDEN]")
+    else:
+        logger.warning("PROXY_URL не найден в .env!")
 
-    app.job_queue.run_repeating(monitor_events, interval=60, first=10)
+    try:
+        builder = Application.builder().token(BOT_TOKEN)
 
-    logger.info("Бот запущен и мониторит стрим + подкасты")
-    app.run_polling()
+        if PROXY_URL:
+            builder = builder.proxy(PROXY_URL)   # ←←← вот главное изменение
+
+        app = builder.build()
+
+        app.add_handler(CommandHandler("radio", radio))
+        app.add_handler(CommandHandler("start", start))
+
+        app.job_queue.run_repeating(monitor_events, interval=60, first=10)
+
+        logger.info("Бот успешно собран и запущен через прокси")
+        app.run_polling()
+
+    except Exception as e:
+        logger.critical(f"КРИТИЧЕСКАЯ ОШИБКА при запуске бота: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     main()
