@@ -164,26 +164,36 @@
             color: white;
             padding: 14px 8px;
         }
+        .schedule-table .program-row {
+            cursor: pointer;
+        }
         .footer {
             text-align: center;
             padding: 20px 15px 15px;
-            background-color: transparent;
-            width: 90%;
+            background-color: rgba(0, 0, 0, 0.201);
+            width: 100%;
             margin-top: auto;
+            backdrop-filter: blur(8px);
         }
         .footer a {
-            display: none;
+            color: #c6c6c6;
+            text-decoration: none;
+            margin: 0 12px;
+            font-size: 15px;
+        }
+        .footer a:hover {
+            text-decoration: underline;
         }
         .footer .dev {
-            display: block !important;
-            color: white !important;
+            display: block;
+            color: white;
             font-size: 13px;
-            text-align: center;
+            margin-top: 12px;
         }
         .hamburger-menu {
             position: fixed;
             top: 10px;
-            right: 30px; /* чуть левее */
+            right: 30px;
             z-index: 1000;
             display: block !important;
         }
@@ -216,7 +226,7 @@
         .menu-content {
             position: fixed;
             top: 55px;
-            right: 30px; /* ближе к центру */
+            right: 30px;
             background-color: #1a1a1a;
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
@@ -267,6 +277,83 @@
         .swipe-hint.show {
             opacity: 1;
         }
+
+        /* === Модалка программы === */
+        .program-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .program-modal.open {
+            display: flex;
+        }
+        .program-modal-content {
+            background: #1a1a1a;
+            border-radius: 12px;
+            max-width: 420px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 20px;
+            position: relative;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+        }
+        .program-modal-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            font-size: 28px;
+            color: #aaa;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .program-modal-close:hover {
+            color: white;
+        }
+        .program-modal-poster {
+            width: 100%;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        .program-modal-title {
+            font-size: 22px;
+            margin: 0 0 8px 0;
+            color: white;
+        }
+        .program-modal-meta {
+            font-size: 14px;
+            color: #aaa;
+            margin-bottom: 12px;
+        }
+        .program-modal-description {
+            font-size: 15px;
+            line-height: 1.5;
+            color: #ddd;
+            margin-bottom: 15px;
+            white-space: pre-wrap;
+        }
+        .program-modal-social {
+            margin-top: 10px;
+        }
+        .program-modal-social a {
+            color: #00aced;
+            text-decoration: none;
+            font-size: 15px;
+        }
+        .program-modal-social a:hover {
+            text-decoration: underline;
+        }
+
         @media (max-width: 600px) {
             body { background-color: #1a1a1a; }
             .background-overlay { display: block; }
@@ -293,9 +380,16 @@
                 width: 20px;
                 height: 20px;
             }
-            .footer { display: block; }
+            .footer { 
+                display: block; 
+                background-color: rgba(0, 0, 0, 0.126) !important;
+            }
             .hamburger-menu { display: block !important; }
             .menu-content.open { display: flex; }
+            .program-modal-content {
+                max-width: 100%;
+                padding: 16px;
+            }
         }
     </style>
 </head>
@@ -311,11 +405,11 @@
             <a href="https://t.me/vtornikshow" target="_blank">Telegram</a>
             <a href="https://t.me/beastybeats23" class="social-link" target="_blank" rel="noopener noreferrer">Чат</a>
             <a href="/stream.html">Видеострим</a>
-            <a href="#schedule-section" onclick="document.getElementById('schedule-section').scrollIntoView({ behavior: 'smooth' });">Расписание эфиров</a>
+            <a href="#schedule-section" onclick="document.getElementById('schedule-section').scrollIntoView({ behavior: 'smooth' });">Расписание&nbsp;эфиров</a>
             <a href="/vtrnk.m3u" download title="Скачать M3U-файл...">Добавить радио в плеер</a>
         </div>
     </div>
-    <div class="swipe-hint" id="swipe-hint">Свайп влево для видео</div>
+    <div class="swipe-hint" id="swipe-hint">Свайп для видео</div>
     <div class="container">
         <img src="/images/logovtrnk.png" alt="Логотип" class="logo">
         <div class="equalizer">
@@ -338,16 +432,30 @@
         <div id="schedule-section" class="schedule-section">
             <h2>Расписание эфиров</h2>
             <table class="schedule-table">
-                <thead>
-                    <tr><th>Время</th><th>Программа</th><th>Автор</th></tr>
-                </thead>
                 <tbody id="schedule-body"></tbody>
             </table>
         </div>
     </div>
     <footer class="footer">
-        <span class="dev">© developed by Dima Beasty 2025</span>
+        <a href="https://t.me/vtornikshow" target="_blank">Telegram</a>
+        <a href="https://t.me/beastybeats23" class="social-link" target="_blank" rel="noopener noreferrer">Чат</a>
+        <a href="/stream.html">Видеострим</a>
+        <a href="#schedule-section" onclick="document.getElementById('schedule-section').scrollIntoView({ behavior: 'smooth' });">Расписание&nbsp;эфиров</a>
+        <a href="/vtrnk.m3u" download title="Скачать M3U-файл...">Добавить радио в плеер</a>
+        <div class="dev">© developed by Dima Beasty 2025</div>
     </footer>
+
+    <!-- Модалка программы -->
+    <div class="program-modal" id="program-modal">
+        <div class="program-modal-content">
+            <span class="program-modal-close" id="program-modal-close">&times;</span>
+            <img id="modal-poster" class="program-modal-poster" src="" alt="Афиша">
+            <h3 class="program-modal-title" id="modal-title"></h3>
+            <div class="program-modal-meta" id="modal-meta"></div>
+            <div class="program-modal-description" id="modal-description"></div>
+            <div class="program-modal-social" id="modal-social"></div>
+        </div>
+    </div>
 
     <audio id="player" style="display: none;" playsinline preload="auto"></audio>
 
@@ -444,6 +552,13 @@
             playStopBtn.disabled = false;
         }
 
+        function shouldPlayJingle() {
+            const lastJingleTime = localStorage.getItem('lastJingleTime');
+            if (!lastJingleTime) return true;
+            const timeDiff = Date.now() - parseInt(lastJingleTime);
+            return timeDiff > 10 * 60 * 1000;
+        }
+
         function togglePlay() {
             playStopBtn.disabled = true;
             if (isPlaying) {
@@ -460,13 +575,19 @@
                 player.load();
                 streamPreloaded = true;
             }
-            isJinglePlaying = true;
-            jinglePlayer.currentTime = 0;
-            jinglePlayer.play().catch(() => startStream());
-            jinglePlayer.addEventListener('ended', () => {
-                isJinglePlaying = false;
+
+            if (shouldPlayJingle()) {
+                isJinglePlaying = true;
+                jinglePlayer.currentTime = 0;
+                jinglePlayer.play().catch(() => startStream());
+                localStorage.setItem('lastJingleTime', Date.now());
+                jinglePlayer.addEventListener('ended', () => {
+                    isJinglePlaying = false;
+                    startStream();
+                }, {once: true});
+            } else {
                 startStream();
-            }, {once: true});
+            }
         }
 
         function startStream() {
@@ -490,7 +611,10 @@
         function updateTrackUI(artist, title, coverPath) {
             trackArtist.textContent = artist || "VTRNK";
             trackTitle.textContent = title || "Radio Show";
-            trackPoster.src = coverPath || "/images/placeholder.png";
+            if (coverPath) {
+                trackPoster.src = coverPath + '?t=' + Date.now();
+                lastTrackData.coverPath = coverPath;
+            }
             updateBackgroundColor(trackPoster.src);
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = new MediaMetadata({
@@ -502,6 +626,69 @@
         }
 
         window.addEventListener('resize', () => updateBackgroundColor(trackPoster.src));
+
+        // === Модалка ===
+        const programModal = document.getElementById('program-modal');
+        const modalPoster = document.getElementById('modal-poster');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMeta = document.getElementById('modal-meta');
+        const modalDescription = document.getElementById('modal-description');
+        const modalSocial = document.getElementById('modal-social');
+        const modalClose = document.getElementById('program-modal-close');
+
+        function openProgramModal(program) {
+            modalTitle.textContent = program.name || 'Без названия';
+
+            // Время + автор
+            const date = new Date(program.start_time);
+            const timeStr = date.toLocaleString('ru-RU', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            let meta = timeStr;
+            if (program.author) meta += ' · ' + program.author;
+            modalMeta.textContent = meta;
+
+            // Описание
+            if (program.description && program.description.trim()) {
+                modalDescription.textContent = program.description;
+                modalDescription.style.display = 'block';
+            } else {
+                modalDescription.style.display = 'none';
+            }
+
+            // Афиша
+            if (program.poster_url) {
+                modalPoster.src = program.poster_url;
+                modalPoster.style.display = 'block';
+            } else {
+                modalPoster.style.display = 'none';
+            }
+
+            // Соц. ссылки
+            if (program.social_links && program.social_links.trim()) {
+                let link = program.social_links.trim();
+                if (!link.startsWith('http')) link = 'https://' + link;
+                modalSocial.innerHTML = `<a href="${link}" target="_blank" rel="noopener noreferrer">${program.social_links}</a>`;
+                modalSocial.style.display = 'block';
+            } else {
+                modalSocial.style.display = 'none';
+            }
+
+            programModal.classList.add('open');
+        }
+
+        function closeProgramModal() {
+            programModal.classList.remove('open');
+        }
+
+        modalClose.addEventListener('click', closeProgramModal);
+        programModal.addEventListener('click', (e) => {
+            if (e.target === programModal) closeProgramModal();
+        });
 
         async function loadSchedule() {
             try {
@@ -521,20 +708,21 @@
                     if (dayKey !== prevDay) {
                         const row = document.createElement('tr');
                         row.className = 'day-header';
-                        row.innerHTML = `<td colspan="3">${date.toLocaleDateString('ru-RU', {weekday:'long', day:'numeric', month:'short'})}</td>`;
+                        row.innerHTML = `<td colspan="2">${date.toLocaleDateString('ru-RU', {weekday:'long', day:'numeric', month:'short'})}</td>`;
                         tbody.appendChild(row);
                         prevDay = dayKey;
                     }
                     const row = document.createElement('tr');
+                    row.className = 'program-row';
                     row.innerHTML = `
                         <td>${date.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}</td>
                         <td>${p.name || '—'}</td>
-                        <td>${p.author || '—'}</td>
                     `;
+                    row.addEventListener('click', () => openProgramModal(p));
                     tbody.appendChild(row);
                 });
                 if (!future.length) {
-                    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;padding:30px;color:#777;">Нет запланированных передач</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="2" style="text-align:center;padding:30px;color:#777;">Нет запланированных передач</td></tr>`;
                 }
             } catch (e) {
                 console.error('Ошибка расписания', e);
@@ -575,7 +763,13 @@
             if (data.artist || data.title) {
                 lastTrackData.artist = data.artist || lastTrackData.artist;
                 lastTrackData.title = data.title || lastTrackData.title;
-                updateTrackUI(lastTrackData.artist, lastTrackData.title, lastTrackData.coverPath);
+                fetch('/get_cover_path')
+                    .then(r => r.json())
+                    .then(coverData => {
+                        lastTrackData.coverPath = coverData.cover_path || lastTrackData.coverPath;
+                        updateTrackUI(lastTrackData.artist, lastTrackData.title, lastTrackData.coverPath);
+                    })
+                    .catch(() => updateTrackUI(lastTrackData.artist, lastTrackData.title, lastTrackData.coverPath));
             }
         });
 
@@ -589,7 +783,7 @@
         let currentX = 0;
         let currentY = 0;
         let startTime = 0;
-        const threshold = 70;
+        const threshold = 100;
         const minHoldTime = 200;
 
         if (posterContainer) {
@@ -601,7 +795,7 @@
                 startTime = Date.now();
                 currentX = startX;
                 currentY = startY;
-                swipeHint.textContent = 'Свайп влево для видео';
+                swipeHint.textContent = 'Свайп для видео';
                 swipeHint.classList.add('show');
                 container.style.transition = 'none';
                 container.style.transform = 'translateX(0px)';
