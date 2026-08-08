@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VTRNK — Рестрим</title>
+    <link rel="icon" href="/images/icon.png">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            background-color: #0d0d0d;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 520px;
+            padding: 20px 16px 40px;
+        }
+        h1 {
+            font-size: 22px;
+            text-align: center;
+            margin: 20px 0 8px;
+            color: #fff;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: #1a1a1a;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #2a2a2a;
+        }
+        .card h2 {
+            font-size: 16px;
+            margin: 0 0 16px 0;
+            color: #00aced;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            color: #aaa;
+            margin-bottom: 6px;
+        }
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 11px 14px;
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            border-color: #00aced;
+        }
+        select {
+            width: 100%;
+            padding: 11px 14px;
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 14px;
+            outline: none;
+        }
+        select:focus {
+            border-color: #00aced;
+        }
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-primary {
+            background: #00aced;
+            color: #000;
+        }
+        .btn-primary:hover {
+            background: #0099cc;
+        }
+        .btn-secondary {
+            background: #333;
+            color: #fff;
+            margin-top: 10px;
+        }
+        .btn-secondary:hover {
+            background: #444;
+        }
+        .status {
+            margin-top: 12px;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
+        .status.success {
+            background: #1a3a1a;
+            color: #4caf50;
+            border: 1px solid #2e7d32;
+            display: block;
+        }
+        .status.error {
+            background: #3a1a1a;
+            color: #ef5350;
+            border: 1px solid #c62828;
+            display: block;
+        }
+        .status.info {
+            background: #1a2a3a;
+            color: #42a5f5;
+            border: 1px solid #1565c0;
+            display: block;
+        }
+        #login-screen {
+            max-width: 360px;
+            margin-top: 80px;
+        }
+        #main-screen {
+            display: none;
+        }
+        .logout {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .logout a {
+            color: #666;
+            font-size: 13px;
+            text-decoration: none;
+        }
+        .logout a:hover {
+            color: #aaa;
+        }
+        .hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: -8px;
+            margin-bottom: 14px;
+        }
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .toggle-row input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            cursor: pointer;
+        }
+        .toggle-row label {
+            margin: 0;
+            font-size: 15px;
+            color: #eee;
+            cursor: pointer;
+        }
+        .key-wrapper {
+            position: relative;
+            margin-bottom: 14px;
+        }
+        .key-wrapper input {
+            margin-bottom: 0;
+            padding-right: 44px;
+        }
+        .toggle-key {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+            line-height: 1;
+        }
+        .toggle-key:hover {
+            color: #00aced;
+        }
+    </style>
+</head>
+<body>
+    <!-- ЭКРАН ВХОДА -->
+    <div class="container" id="login-screen">
+        <h1>VTRNK Рестрим</h1>
+        <p class="subtitle">Вход только для администратора</p>
+        <div class="card">
+            <label for="password">Пароль</label>
+            <input type="password" id="password" placeholder="Введите пароль" autocomplete="current-password">
+            <button class="btn btn-primary" id="login-btn">Войти</button>
+            <div class="status" id="login-status"></div>
+        </div>
+    </div>
+
+    <!-- ОСНОВНОЙ ЭКРАН -->
+    <div class="container" id="main-screen">
+        <h1>Настройка рестрима</h1>
+        <p class="subtitle">Каждый сервис включается и настраивается отдельно.<br>Рестрим стартует автоматически при появлении видео.</p>
+
+        <!-- Mixcloud -->
+        <div class="card">
+            <h2>🎵 Mixcloud</h2>
+
+            <div class="toggle-row">
+                <input type="checkbox" id="mixcloud-enabled">
+                <label for="mixcloud-enabled">Включить рестрим на Mixcloud</label>
+            </div>
+
+            <label for="mixcloud-quality">Качество</label>
+            <select id="mixcloud-quality">
+                <option value="750">750 кбит/с (рекомендуется)</option>
+                <option value="1080">1080p</option>
+                <option value="max">Максимум (как из OBS)</option>
+            </select>
+
+            <label for="mixcloud-server">RTMP Server</label>
+            <input type="text" id="mixcloud-server" placeholder="rtmp://rtmp.mixcloud.com/stream">
+            <p class="hint">Обычно: rtmp://rtmp.mixcloud.com/stream</p>
+
+            <label for="mixcloud-key">Stream Key</label>
+            <div class="key-wrapper">
+                <input type="password" id="mixcloud-key" placeholder="Ключ стрима из Mixcloud">
+                <button type="button" class="toggle-key" data-target="mixcloud-key" title="Показать / скрыть">👁</button>
+            </div>
+
+            <button class="btn btn-primary" id="save-mixcloud-btn">Сохранить Mixcloud</button>
+            <div class="status" id="mixcloud-status"></div>
+        </div>
+
+        <!-- Дополнительный сервис -->
+        <div class="card">
+            <h2>📡 Дополнительный сервис</h2>
+
+            <div class="toggle-row">
+                <input type="checkbox" id="extra-enabled">
+                <label for="extra-enabled">Включить рестрим на этот сервис</label>
+            </div>
+
+            <label for="extra-name">Название сервиса</label>
+            <input type="text" id="extra-name" placeholder="YouTube / Twitch / VK и т.д.">
+
+            <label for="extra-quality">Качество</label>
+            <select id="extra-quality">
+                <option value="750">750 кбит/с</option>
+                <option value="1080">1080p</option>
+                <option value="max">Максимум (как из OBS)</option>
+            </select>
+
+            <label for="extra-server">RTMP Server</label>
+            <input type="text" id="extra-server" placeholder="rtmp://...">
+
+            <label for="extra-key">Stream Key</label>
+            <div class="key-wrapper">
+                <input type="password" id="extra-key" placeholder="Ключ стрима">
+                <button type="button" class="toggle-key" data-target="extra-key" title="Показать / скрыть">👁</button>
+            </div>
+
+            <button class="btn btn-primary" id="save-extra-btn">Сохранить дополнительный</button>
+            <div class="status" id="extra-status"></div>
+        </div>
+
+        <!-- Статус -->
+        <div class="card">
+            <button class="btn btn-secondary" id="refresh-status-btn">Обновить статус</button>
+            <div class="status" id="restream-status" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="logout">
+            <a href="#" id="logout-btn">Выйти</a>
+        </div>
+    </div>
+
+    <script>
+        const loginScreen = document.getElementById('login-screen');
+        const mainScreen = document.getElementById('main-screen');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('login-btn');
+        const loginStatus = document.getElementById('login-status');
+
+        // === Показать / скрыть ключ ===
+        document.querySelectorAll('.toggle-key').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById(btn.dataset.target);
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    btn.textContent = '🙈';
+                } else {
+                    input.type = 'password';
+                    btn.textContent = '👁';
+                }
+            });
+        });
+
+        // === Вход через бэкенд ===
+        async function tryLogin() {
+            const password = passwordInput.value.trim();
+            if (!password) {
+                showStatus(loginStatus, 'Введите пароль', 'error');
+                return;
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Проверка...';
+
+            try {
+                const res = await fetch('/api/restrim/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    sessionStorage.setItem('restrim_auth', '1');
+                    sessionStorage.setItem('restrim_token', data.token);
+                    showMain();
+                } else {
+                    showStatus(loginStatus, data.message || 'Неверный пароль', 'error');
+                    passwordInput.value = '';
+                    passwordInput.focus();
+                }
+            } catch (err) {
+                showStatus(loginStatus, 'Ошибка связи с сервером', 'error');
+                console.error(err);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Войти';
+            }
+        }
+
+        loginBtn.addEventListener('click', tryLogin);
+        passwordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') tryLogin();
+        });
+
+        function showMain() {
+            loginScreen.style.display = 'none';
+            mainScreen.style.display = 'block';
+            loadSettings();
+            refreshStatus();
+        }
+
+        if (sessionStorage.getItem('restrim_auth') === '1') {
+            showMain();
+        }
+
+        document.getElementById('logout-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            sessionStorage.removeItem('restrim_auth');
+            sessionStorage.removeItem('restrim_token');
+            location.reload();
+        });
+
+        function showStatus(el, text, type) {
+            el.textContent = text;
+            el.className = 'status ' + type;
+            if (type === 'success') {
+                setTimeout(() => { el.className = 'status'; }, 4000);
+            }
+        }
+
+        // === Загрузка настроек ===
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/restrim/settings', {
+                    headers: {
+                        'X-Restrim-Token': sessionStorage.getItem('restrim_token') || ''
+                    }
+                });
+                if (!res.ok) throw new Error('Ошибка загрузки');
+                const data = await res.json();
+
+                // Mixcloud
+                document.getElementById('mixcloud-enabled').checked = !!data.mixcloud?.enabled;
+                document.getElementById('mixcloud-quality').value = data.mixcloud?.quality || '750';
+                document.getElementById('mixcloud-server').value = data.mixcloud?.server || 'rtmp://rtmp.mixcloud.com/stream';
+                document.getElementById('mixcloud-key').value = data.mixcloud?.key || '';
+
+                // Extra
+                document.getElementById('extra-enabled').checked = !!data.extra?.enabled;
+                document.getElementById('extra-name').value = data.extra?.name || '';
+                document.getElementById('extra-quality').value = data.extra?.quality || '750';
+                document.getElementById('extra-server').value = data.extra?.server || '';
+                document.getElementById('extra-key').value = data.extra?.key || '';
+            } catch (err) {
+                console.error('Не удалось загрузить настройки:', err);
+            }
+        }
+
+        // === Сохранение Mixcloud ===
+        document.getElementById('save-mixcloud-btn').addEventListener('click', async () => {
+            const payload = {
+                mixcloud: {
+                    enabled: document.getElementById('mixcloud-enabled').checked,
+                    quality: document.getElementById('mixcloud-quality').value,
+                    server: document.getElementById('mixcloud-server').value.trim(),
+                    key: document.getElementById('mixcloud-key').value.trim()
+                }
+            };
+
+            const statusEl = document.getElementById('mixcloud-status');
+            showStatus(statusEl, 'Сохранение...', 'info');
+
+            try {
+                const res = await fetch('/api/restrim/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Restrim-Token': sessionStorage.getItem('restrim_token') || ''
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showStatus(statusEl, 'Mixcloud сохранён', 'success');
+                    refreshStatus();
+                } else {
+                    showStatus(statusEl, data.message || 'Ошибка сохранения', 'error');
+                }
+            } catch (err) {
+                showStatus(statusEl, 'Ошибка связи с сервером', 'error');
+                console.error(err);
+            }
+        });
+
+        // === Сохранение Extra ===
+        document.getElementById('save-extra-btn').addEventListener('click', async () => {
+            const payload = {
+                extra: {
+                    enabled: document.getElementById('extra-enabled').checked,
+                    name: document.getElementById('extra-name').value.trim(),
+                    quality: document.getElementById('extra-quality').value,
+                    server: document.getElementById('extra-server').value.trim(),
+                    key: document.getElementById('extra-key').value.trim()
+                }
+            };
+
+            const statusEl = document.getElementById('extra-status');
+            showStatus(statusEl, 'Сохранение...', 'info');
+
+            try {
+                const res = await fetch('/api/restrim/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Restrim-Token': sessionStorage.getItem('restrim_token') || ''
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    showStatus(statusEl, 'Дополнительный сервис сохранён', 'success');
+                    refreshStatus();
+                } else {
+                    showStatus(statusEl, data.message || 'Ошибка сохранения', 'error');
+                }
+            } catch (err) {
+                showStatus(statusEl, 'Ошибка связи с сервером', 'error');
+                console.error(err);
+            }
+        });
+
+        // === Статус ===
+        async function refreshStatus() {
+            const el = document.getElementById('restream-status');
+            try {
+                const res = await fetch('/api/restrim/status', {
+                    headers: {
+                        'X-Restrim-Token': sessionStorage.getItem('restrim_token') || ''
+                    }
+                });
+                const data = await res.json();
+
+                let parts = [];
+                if (data.mixcloud?.running) {
+                    parts.push(`Mixcloud: ${data.mixcloud.quality || '—'}`);
+                }
+                if (data.extra?.running) {
+                    parts.push(`${data.extra.name || 'Extra'}: ${data.extra.quality || '—'}`);
+                }
+
+                if (parts.length > 0) {
+                    showStatus(el, 'Активно: ' + parts.join(' • '), 'success');
+                } else if (data.mixcloud?.enabled || data.extra?.enabled) {
+                    showStatus(el, 'Ожидает появления видео-потока...', 'info');
+                } else {
+                    showStatus(el, 'Все рестримы выключены', 'error');
+                }
+            } catch (err) {
+                showStatus(el, 'Не удалось получить статус', 'error');
+            }
+        }
+
+        document.getElementById('refresh-status-btn').addEventListener('click', refreshStatus);
+    </script>
+</body>
+</html>

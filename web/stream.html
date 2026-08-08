@@ -92,6 +92,15 @@
             height: 100%;
             object-fit: cover;
         }
+        .controls-row {
+            position: relative;
+            width: 400px;
+            height: 40px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
         .play-stop-btn {
             width: 80px;
             height: 40px;
@@ -102,7 +111,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 10px;
+            margin: 0;
+            z-index: 1;
         }
         .play-stop-btn:hover {
             background: #555;
@@ -115,6 +125,71 @@
             width: 24px;
             height: 24px;
             fill: white;
+        }
+        .quality-wrap {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            z-index: 2;
+        }
+        .quality-wrap.visible {
+            display: block;
+        }
+        .quality-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 6px;
+            background: transparent;;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        .quality-btn:hover {
+            background:  rgba(255, 255, 255, 0.12);
+        }
+        .quality-btn svg {
+            width: 22px;
+            height: 22px;
+            fill: #fff;
+        }
+        .quality-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            bottom: 48px;
+            min-width: 120px;
+            background: rgba(20,20,20,0.95);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 6px 0;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            z-index: 30;
+        }
+        .quality-menu.open {
+            display: block;
+        }
+        .quality-menu button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: none;
+            border: none;
+            color: #eee;
+            padding: 8px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .quality-menu button:hover {
+            background: #333;
+        }
+        .quality-menu button.active {
+            color: #00aced;
         }
         .footer {
             text-align: center;
@@ -231,6 +306,9 @@
                 width: 320px;
                 height: 320px;
             }
+            .controls-row {
+                width: 320px;
+            }
             .play-stop-btn {
                 width: 70px;
                 height: 35px;
@@ -238,6 +316,10 @@
             .play-stop-btn svg {
                 width: 20px;
                 height: 20px;
+            }
+            .quality-btn {
+                width: 35px;
+                height: 35px;
             }
             .footer {
                 display: none;
@@ -280,10 +362,18 @@
             <video id="video-player" class="poster" controls playsinline muted style="display: none;"></video>
             <img id="placeholder-img" src="/images/vt-videoplaceholder.png" alt="Video Placeholder" class="placeholder">
         </div>
-        <button class="play-stop-btn" id="play-stop">
-            <svg id="play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            <svg id="stop-icon" viewBox="0 0 24 24" style="display: none;"><path d="M6 6h12v12H6z"/></svg>
-        </button>
+        <div class="controls-row">
+            <button class="play-stop-btn" id="play-stop">
+                <svg id="play-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg id="stop-icon" viewBox="0 0 24 24" style="display: none;"><path d="M6 6h12v12H6z"/></svg>
+            </button>
+            <div class="quality-wrap" id="quality-wrap">
+                <div class="quality-menu" id="quality-menu"></div>
+                <button type="button" class="quality-btn" id="quality-btn" title="Качество" aria-label="Качество">
+                    <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.07 7.07 0 0 0-1.62-.94l-.36-2.54A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.55-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.64 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94L2.76 14.5a.49.49 0 0 0-.12.61l1.92 3.32c.13.22.39.3.59.22l2.39-.96c.5.39 1.04.7 1.62.94l.36 2.54c.05.24.25.42.49.42h4c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.55 1.62-.94l2.39.96c.22.09.46 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+                </button>
+            </div>
+        </div>
     </div>
     <footer class="footer">
         <a href="https://t.me/vtornikshow" target="_blank">Telegram</a>
@@ -304,13 +394,65 @@
         const swipeHint = document.getElementById('swipe-hint');
         const container = document.querySelector('.container');
         const posterContainer = document.querySelector('.poster-container');
+        const qualityWrap = document.getElementById('quality-wrap');
+        const qualityBtn = document.getElementById('quality-btn');
+        const qualityMenu = document.getElementById('quality-menu');
         let isPlaying = false;
         let isMenuOpen = false;
         let isVideoStreamActive = false;
         let previousStreamActive = false;
         let hls = null;
+        let hlsFallbackUsed = false;
+        let selectedLevel = -1;
 
-        // Гамбургер-меню
+        function levelLabel(level, index) {
+            const byIndex = ['450', '750', '1080', 'Max'];
+            return byIndex[index] || ('L' + index);
+        }
+
+        function rebuildQualityMenu() {
+            qualityMenu.innerHTML = '';
+            if (!hls || !hls.levels || hls.levels.length === 0) {
+                qualityWrap.classList.remove('visible');
+                return;
+            }
+            qualityWrap.classList.add('visible');
+
+            const autoBtn = document.createElement('button');
+            autoBtn.type = 'button';
+            autoBtn.textContent = 'Авто';
+            autoBtn.className = selectedLevel === -1 ? 'active' : '';
+            autoBtn.addEventListener('click', () => {
+                selectedLevel = -1;
+                hls.currentLevel = -1;
+                rebuildQualityMenu();
+                qualityMenu.classList.remove('open');
+            });
+            qualityMenu.appendChild(autoBtn);
+
+            hls.levels.forEach((level, index) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = levelLabel(level, index);
+                btn.className = selectedLevel === index ? 'active' : '';
+                btn.addEventListener('click', () => {
+                    selectedLevel = index;
+                    hls.currentLevel = index;
+                    rebuildQualityMenu();
+                    qualityMenu.classList.remove('open');
+                });
+                qualityMenu.appendChild(btn);
+            });
+        }
+
+        qualityBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            qualityMenu.classList.toggle('open');
+        });
+        document.addEventListener('click', () => {
+            qualityMenu.classList.remove('open');
+        });
+
         hamburgerIcon.addEventListener('click', () => {
             isMenuOpen = !isMenuOpen;
             hamburgerIcon.classList.toggle('open');
@@ -324,7 +466,6 @@
             }
         });
 
-        // Animated Equalizer
         const canvas = document.getElementById('equalizer');
         const ctx = canvas.getContext('2d');
         canvas.width = 200;
@@ -359,15 +500,12 @@
         }
         drawEqualizer();
 
-        // Обработка ошибок видео
         videoPlayer.addEventListener('error', (e) => {
             console.error("Ошибка воспроизведения:", e);
             if (isVideoStreamActive) {
-                console.log("HLS-поток недоступен, переключаемся на видео-заставку");
                 isVideoStreamActive = false;
                 if (isPlaying) updateVideoSource();
             } else {
-                console.log("Ошибка воспроизведения видео-заставки, останавливаем");
                 videoPlayer.pause();
                 isPlaying = false;
                 playIcon.style.display = 'block';
@@ -378,7 +516,6 @@
         });
 
         videoPlayer.addEventListener('play', () => {
-            console.log("Воспроизведение начато (видео или заставка)");
             playIcon.style.display = 'none';
             stopIcon.style.display = 'block';
             isPlaying = true;
@@ -387,21 +524,19 @@
         });
 
         videoPlayer.addEventListener('pause', () => {
-            console.log("Воспроизведение приостановлено");
             playIcon.style.display = 'block';
             stopIcon.style.display = 'none';
             isPlaying = false;
             videoPlayer.style.display = 'none';
             placeholderImg.style.display = 'block';
+            qualityMenu.classList.remove('open');
         });
 
-        // Проверка статуса видео-стрима
         async function checkStreamStatus() {
             try {
                 const response = await fetch('/monitor/radio_status');
                 const data = await response.json();
                 isVideoStreamActive = data.video_stream_active;
-                console.log(`Видео-стрим статус от backend: ${isVideoStreamActive}`);
                 if (isVideoStreamActive !== previousStreamActive && isPlaying) {
                     updateVideoSource();
                     previousStreamActive = isVideoStreamActive;
@@ -418,63 +553,34 @@
             }
         }
 
-        // Обновление источника видео
-        function updateVideoSource() {
-            console.log(`Обновление источника: isVideoStreamActive=${isVideoStreamActive}, isPlaying=${isPlaying}`);
-            if (!isPlaying) {
-                if (hls) {
-                    hls.destroy();
-                    hls = null;
-                }
-                videoPlayer.src = '';
-                videoPlayer.style.display = 'none';
-                placeholderImg.style.display = 'block';
-                console.log("Воспроизведение остановлено, показываем статичную заставку");
-                return;
+        function createHlsPlayer(sourceUrl) {
+            if (hls) {
+                hls.destroy();
+                hls = null;
             }
-
-            if (isVideoStreamActive && Hls.isSupported()) {
-                if (hls) {
-                    hls.destroy();
-                    hls = null;
+            hls = new Hls({
+                liveSyncDurationCount: 3,
+                liveMaxLatencyDurationCount: Infinity,
+                liveDurationInfinity: true,
+                lowLatencyMode: true,
+                maxBufferLength: 60,
+                enableWorker: false
+            });
+            hls.loadSource(sourceUrl);
+            hls.attachMedia(videoPlayer);
+            hls.on('hlsManifestParsed', function () {
+                if (selectedLevel >= 0 && selectedLevel < hls.levels.length) {
+                    hls.currentLevel = selectedLevel;
+                } else {
+                    hls.currentLevel = -1;
+                    selectedLevel = -1;
                 }
-                hls = new Hls({
-                    liveSyncDurationCount: 3,
-                    liveMaxLatencyDurationCount: Infinity,
-                    liveDurationInfinity: true,
-                    lowLatencyMode: true,
-                    maxBufferLength: 60,
-                    enableWorker: false
-                });
-                hls.loadSource('/hls/video_stream123.m3u8');
-                hls.attachMedia(videoPlayer);
-                hls.on('hlsError', function (event, data) {
-                    console.log('HLS error:', data);
-                    if (data.fatal) {
-                        console.log("Фатальная ошибка HLS, переключаемся на видео-заставку");
-                        isVideoStreamActive = false;
-                        updateVideoSource();
-                    }
-                });
-                hls.on('hlsManifestParsed', function () {
-                    console.log("HLS манифест загружен, начинаем воспроизведение");
-                    videoPlayer.play().catch(err => {
-                        console.error("Ошибка воспроизведения стрима:", err);
-                        videoPlayer.pause();
-                        isPlaying = false;
-                        playIcon.style.display = 'block';
-                        stopIcon.style.display = 'none';
-                        videoPlayer.style.display = 'none';
-                        placeholderImg.style.display = 'block';
-                    });
-                });
-                videoPlayer.removeAttribute('loop');
-                console.log("Переключено на live HLS-поток");
-            } else if (isVideoStreamActive && videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-                videoPlayer.src = '/hls/video_stream123.m3u8';
-                videoPlayer.removeAttribute('loop');
-                console.log("Переключено на нативный видео-HLS");
+                rebuildQualityMenu();
                 videoPlayer.play().catch(err => {
+                    if (err && err.name === 'AbortError') {
+                        console.log('play() interrupted (normal race), ignore');
+                        return;
+                    }
                     console.error("Ошибка воспроизведения стрима:", err);
                     videoPlayer.pause();
                     isPlaying = false;
@@ -483,17 +589,76 @@
                     videoPlayer.style.display = 'none';
                     placeholderImg.style.display = 'block';
                 });
+            });
+            hls.on('hlsError', function (event, data) {
+                if (!data.fatal) return;
+                if (!hlsFallbackUsed && sourceUrl.indexOf('video_stream123.m3u8') === -1) {
+                    hlsFallbackUsed = true;
+                    createHlsPlayer('/hls/video_stream123.m3u8');
+                    return;
+                }
+                isVideoStreamActive = false;
+                qualityWrap.classList.remove('visible');
+                updateVideoSource();
+            });
+        }
+
+        function updateVideoSource() {
+            if (!isPlaying) {
+                if (hls) {
+                    hls.destroy();
+                    hls = null;
+                }
+                hlsFallbackUsed = false;
+                qualityWrap.classList.remove('visible');
+                videoPlayer.src = '';
+                videoPlayer.style.display = 'none';
+                placeholderImg.style.display = 'block';
+                return;
+            }
+
+            if (isVideoStreamActive && Hls.isSupported()) {
+                hlsFallbackUsed = false;
+                createHlsPlayer('/hls/master.m3u8');
+                videoPlayer.removeAttribute('loop');
+            } else if (isVideoStreamActive && videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
+                qualityWrap.classList.remove('visible');
+                videoPlayer.src = '/hls/master.m3u8';
+                videoPlayer.removeAttribute('loop');
+                videoPlayer.play().catch(err => {
+                    if (err && err.name === 'AbortError') {
+                        console.log('play() interrupted (normal race), ignore');
+                        return;
+                    }
+                    videoPlayer.src = '/hls/video_stream123.m3u8';
+                    videoPlayer.play().catch(err2 => {
+                        if (err2 && err2.name === 'AbortError') {
+                            console.log('play() interrupted (normal race), ignore');
+                            return;
+                        }
+                        videoPlayer.pause();
+                        isPlaying = false;
+                        playIcon.style.display = 'block';
+                        stopIcon.style.display = 'none';
+                        videoPlayer.style.display = 'none';
+                        placeholderImg.style.display = 'block';
+                    });
+                });
             } else {
                 if (hls) {
                     hls.destroy();
                     hls = null;
                 }
+                hlsFallbackUsed = false;
+                qualityWrap.classList.remove('visible');
                 videoPlayer.src = '/images/vplace.MP4';
                 videoPlayer.setAttribute('loop', 'true');
                 videoPlayer.load();
-                console.log("Переключено на видео-заставку");
                 videoPlayer.play().catch(err => {
-                    console.error("Ошибка воспроизведения видео-заставки:", err);
+                    if (err && err.name === 'AbortError') {
+                        console.log('play() interrupted (normal race), ignore');
+                        return;
+                    }
                     videoPlayer.pause();
                     isPlaying = false;
                     playIcon.style.display = 'block';
@@ -519,20 +684,16 @@
 
         playStopBtn.addEventListener('click', togglePlay);
 
-        // Функция для обновления UI трека
         function updateTrackUI(artist, title) {
             if (isVideoStreamActive) {
                 trackArtist.textContent = "VTRNK";
                 trackTitle.textContent = "Video Stream";
-                console.log("Видео-стрим активен, отображаем VTRNK Video Stream");
             } else {
                 trackArtist.textContent = artist || "VTRNK";
                 trackTitle.textContent = title || "Video Stream";
-                console.log("Видео-стрим неактивен, показываем аудио-трек или дефолт");
             }
         }
 
-        // Загружаем начальные данные
         async function initialize() {
             await checkStreamStatus();
             fetch('/track')
@@ -543,12 +704,8 @@
                         dataDict[item[0]] = item[1];
                     });
                     updateTrackUI(dataDict.artist, dataDict.title);
-                    console.log("Начальная загрузка UI завершена");
                 })
-                .catch(err => {
-                    console.error("Ошибка получения начального трека:", err);
-                    updateTrackUI("VTRNK", "Video Stream");
-                });
+                .catch(() => updateTrackUI("VTRNK", "Video Stream"));
             videoPlayer.style.display = 'none';
             placeholderImg.style.display = 'block';
         }
@@ -556,40 +713,27 @@
         initialize();
         setInterval(checkStreamStatus, 10000);
 
-        // Обновляем информацию о текущем треке через WebSocket
         const socket = io('https://vtrnk.online');
-        socket.on('connect', () => console.log("WebSocket connection opened successfully"));
         socket.on('track_update', (data) => {
             if (!isVideoStreamActive) {
                 updateTrackUI(data.artist, data.title);
-                console.log("WebSocket обновил аудио-трек, видео неактивно");
-            } else {
-                console.log("WebSocket игнорируется, видео-стрим активен");
             }
         });
-        socket.on('disconnect', () => console.log("WebSocket connection closed"));
 
         if ('mediaSession' in navigator) {
             navigator.mediaSession.setActionHandler('play', togglePlay);
             navigator.mediaSession.setActionHandler('pause', togglePlay);
         }
 
-        // Swipe gesture for mobile navigation - only on poster-container with animation
-        let startX = 0;
-        let startY = 0;
-        let currentX = 0;
-        let currentY = 0;
-        let startTime = 0;
-        const threshold = 70; // Minimum swipe distance in pixels
-        const minHoldTime = 200; // Minimum hold time in ms for a valid swipe
+        let startX = 0, startY = 0, currentX = 0, currentY = 0, startTime = 0;
+        const threshold = 70;
+        const minHoldTime = 200;
         const isMobile = window.innerWidth <= 600;
 
         if (isMobile && posterContainer) {
             posterContainer.addEventListener('touchstart', (e) => {
                 const target = e.target;
-                if (target.tagName === 'BUTTON' || target.closest('button') || target.tagName === 'INPUT') {
-                    return;
-                }
+                if (target.tagName === 'BUTTON' || target.closest('button') || target.tagName === 'INPUT') return;
                 startX = e.touches[0].clientX;
                 startY = e.touches[0].clientY;
                 startTime = Date.now();
@@ -607,37 +751,27 @@
                 currentY = e.touches[0].clientY;
                 const deltaX = currentX - startX;
                 const deltaY = currentY - startY;
-
                 if (Math.abs(deltaX) > Math.abs(deltaY)) {
                     e.preventDefault();
                     container.style.transform = `translateX(${deltaX}px)`;
-
-                    if (deltaX > 21) {
-                        swipeHint.textContent = 'Переход к радио...';
-                    } else if (deltaX < -21) {
-                        swipeHint.textContent = 'Свайп влево для видео (или используйте меню)';
-                    }
+                    if (deltaX > 21) swipeHint.textContent = 'Переход к радио...';
+                    else if (deltaX < -21) swipeHint.textContent = 'Свайп влево для видео (или используйте меню)';
                 }
             }, { passive: false });
 
-            posterContainer.addEventListener('touchend', (e) => {
+            posterContainer.addEventListener('touchend', () => {
                 const deltaX = currentX - startX;
                 const holdTime = Date.now() - startTime;
                 swipeHint.classList.remove('show');
                 container.style.transition = 'transform 0.3s ease-out';
-
                 if (holdTime < minHoldTime || Math.abs(deltaX) < threshold) {
                     container.style.transform = 'translateX(0px)';
                 } else if (deltaX > threshold) {
-                    // Swipe right to radio
                     container.style.transform = `translateX(${window.innerWidth}px)`;
-                    setTimeout(() => {
-                        window.location.href = '/radio.html';
-                    }, 300);
+                    setTimeout(() => { window.location.href = '/radio.html'; }, 300);
                 } else {
                     container.style.transform = 'translateX(0px)';
                 }
-
                 startX = startY = currentX = currentY = 0;
                 startTime = 0;
             }, { passive: false });
