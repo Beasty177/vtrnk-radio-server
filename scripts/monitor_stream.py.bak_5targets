@@ -1,0 +1,624 @@
+# /home/beasty197/projects/vtrnk_radio/scripts/monitor_stream.py
+
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import requests
+import json
+import logging
+import psutil
+import sqlite3
+import subprocess
+import os
+import time
+import secrets
+import shlex
+from datetime import datetime
+import threading
+
+# ---- load .env ----
+def load_env(path="/home/beasty197/projects/vtrnk_radio/.env"):
+    if not os.path.exists(path):
+        return
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+load_env()
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+logging.basicConfig(
+    filename='/home/beasty197/projects/vtrnk_radio/logs/stream_monitor.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Icecast from env
+ICECAST_HOST = os.environ.get("ICECAST_HOST", "localhost")
+ICECAST_PORT = int(os.environ.get("ICECAST_PORT", "8000"))
+ICECAST_MOUNT = os.environ.get("ICECAST_MOUNT", "/radio_stream")
+ICECAST_ADMIN_USER = os.environ.get("ICECAST_ADMIN_USER", "admin")
+ICECAST_ADMIN_PASSWORD = os.environ.get("ICECAST_ADMIN_PASSWORD", "")
+
+CURRENT_TRACK_FILE = '/home/beasty197/projects/vtrnk_radio/data/radio_current_track.txt'
+PLAYBACK_MODE = "random"
+
+# HLS transcoder
+HLS_FILE = '/home/beasty197/projects/vtrnk_radio/web/hls/video_stream123.m3u8'
+TRANSCODER_SCRIPT = '/home/beasty197/projects/vtrnk_radio/scripts/hls_transcoder.sh'
+TRANSCODER_CHECK_INTERVAL = 10
+# только transcoder (НЕ restrim — у него тоже может быть video_stream123.m3u8 в cmdline)
+FFMPEG_PGREP = 'ffmpeg -y -i rtmp://127.0.0.1/live/video_stream123'
+VIDEO_MAX_AGE = 45
+
+# ==================== RESTRIM ====================
+RESTRIM_CONFIG_PATH = '/home/beasty197/projects/vtrnk_radio/data/restrim.json'
+RESTRIM_ADMIN_PASSWORD = os.environ.get('RESTRIM_ADMIN_PASSWORD', '')
+RESTRIM_CHECK_INTERVAL = 10
+RESTRIM_START_COOLDOWN = 30
+
+_restrim_tokens = set()
+_restrim_last_start_attempt = {}
+
+DEFAULT_RESTRIM_CONFIG = {
+    "mixcloud": {
+        "enabled": False,
+        "quality": "750",
+        "rtmp_url": "",
+        "stream_key": ""
+    },
+    "extra": {
+        "enabled": False,
+        "name": "Extra",
+        "quality": "750",
+        "rtmp_url": "",
+        "stream_key": ""
+    }
+}
+
+
+def _read_restrim_config():
+    try:
+        with open(RESTRIM_CONFIG_PATH, 'r') as f:
+            data = json.load(f)
+        for svc, defaults in DEFAULT_RESTRIM_CONFIG.items():
+            if svc not in data:
+                data[svc] = defaults.copy()
+            else:
+                for k, v in defaults.items():
+                    data[svc].setdefault(k, v)
+        return data
+    except Exception:
+        return json.loads(json.dumps(DEFAULT_RESTRIM_CONFIG))
+
+
+def _write_restrim_config(data):
+    os.makedirs(os.path.dirname(RESTRIM_CONFIG_PATH), exist_ok=True)
+    with open(RESTRIM_CONFIG_PATH, 'w') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    try:
+        os.chmod(RESTRIM_CONFIG_PATH, 0o600)
+    except Exception:
+        pass
+
+
+def _check_restrim_token():
+    token = request.headers.get('X-Restrim-Token', '')
+    return bool(token) and token in _restrim_tokens
+
+
+def is_video_live():
+    """Свежий playlist от nginx-rtmp = OBS подключен."""
+    try:
+        if not os.path.exists(HLS_FILE):
+            return False
+        age = time.time() - os.path.getmtime(HLS_FILE)
+        return age < VIDEO_MAX_AGE
+    except Exception:
+        return False
+
+
+def is_restream_process_running(service_name):
+    try:
+        marker = f'restrim_{service_name}'
+        r = subprocess.run(
+            ['/usr/bin/pgrep', '-f', marker],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _video_opts_for_quality(quality):
+    if quality == '450':
+        return (
+            '-c:v libx264 -preset veryfast -tune zerolatency '
+            '-b:v 450k -maxrate 450k -bufsize 900k -s 640x360 -g 60'
+        )
+    if quality == '1080':
+        return (
+            '-c:v libx264 -preset veryfast -tune zerolatency '
+            '-b:v 4500k -maxrate 4500k -bufsize 9000k -s 1920x1080 -g 60'
+        )
+    if quality == 'max':
+        return '-c:v copy'
+    return (
+        '-c:v libx264 -preset veryfast -tune zerolatency '
+        '-b:v 750k -maxrate 750k -bufsize 1500k -s 854x480 -g 60'
+    )
+
+
+def start_restream(service_name):
+    if is_restream_process_running(service_name):
+        return
+
+    now = time.time()
+    last = _restrim_last_start_attempt.get(service_name, 0)
+    if now - last < RESTRIM_START_COOLDOWN:
+        return
+    _restrim_last_start_attempt[service_name] = now
+
+    if not is_video_live():
+        return
+
+    cfg = _read_restrim_config().get(service_name, {})
+    url = (cfg.get('rtmp_url') or '').strip()
+    key = (cfg.get('stream_key') or '').strip()
+    quality = cfg.get('quality', '750')
+    if not url or not key:
+        logging.warning(f"restrim {service_name}: no url/key, skip start")
+        return
+
+    # Вход = живой HLS от nginx-rtmp (RTMP play на localhost не работает)
+    src = HLS_FILE
+    dest = url.rstrip('/') + '/' + key
+    marker = f'restrim_{service_name}'
+    log_path = f'/home/beasty197/projects/vtrnk_radio/logs/restrim_{service_name}.log'
+    vopts = _video_opts_for_quality(quality)
+    aopts = '-c:a aac -b:a 128k -ac 2'
+
+    try:
+        with open(log_path, 'a') as logf:
+            logf.write(f"{datetime.now()} start {service_name} q={quality} via hls {src}\n")
+
+        re_flag = '-re ' if quality != 'max' else ''
+        if quality == 'max':
+            vopts = '-c:v copy'
+
+        inner = (
+            f'exec -a {shlex.quote(marker)} /usr/bin/ffmpeg -hide_banner -loglevel warning '
+            f'{re_flag}-i {shlex.quote(src)} '
+            f'{vopts} {aopts} '
+            f'-f flv {shlex.quote(dest)} '
+            f'>> {shlex.quote(log_path)} 2>&1'
+        )
+        subprocess.Popen(
+            ['/bin/bash', '-c', inner],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        logging.info(f"restrim {service_name} start requested q={quality}")
+    except Exception as e:
+        logging.error(f"restrim {service_name} start failed: {e}")
+
+
+def stop_restream(service_name):
+    try:
+        if not is_restream_process_running(service_name):
+            return
+        subprocess.run(
+            ['/usr/bin/pkill', '-f', f'restrim_{service_name}'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        logging.info(f"restrim {service_name} stopped")
+    except Exception as e:
+        logging.error(f"restrim {service_name} stop failed: {e}")
+
+
+def manage_restrim():
+    logging.info("Restrim manager started")
+    while True:
+        try:
+            video_active = is_video_live()
+            cfg = _read_restrim_config()
+
+            for svc in ('mixcloud', 'extra'):
+                sc = cfg.get(svc, {})
+                enabled = bool(sc.get('enabled'))
+                has_key = bool(sc.get('stream_key')) and bool(sc.get('rtmp_url'))
+                running = is_restream_process_running(svc)
+
+                if video_active and enabled and has_key and not running:
+                    logging.info(f"Restrim {svc}: video+enabled → start")
+                    start_restream(svc)
+                elif (not video_active or not enabled) and running:
+                    logging.info(
+                        f"Restrim {svc}: stop (video={video_active} enabled={enabled})"
+                    )
+                    stop_restream(svc)
+        except Exception as e:
+            logging.error(f"manage_restrim error: {e}")
+        time.sleep(RESTRIM_CHECK_INTERVAL)
+
+
+@app.route('/api/restrim/login', methods=['POST'])
+def restrim_login():
+    body = request.get_json(silent=True) or {}
+    password = body.get('password', '')
+    if not RESTRIM_ADMIN_PASSWORD:
+        return jsonify({
+            "success": False,
+            "message": "RESTRIM_ADMIN_PASSWORD not set in .env"
+        }), 500
+    if password != RESTRIM_ADMIN_PASSWORD:
+        return jsonify({"success": False, "message": "Неверный пароль"}), 401
+    token = secrets.token_urlsafe(32)
+    _restrim_tokens.add(token)
+    logging.info("restrim login ok")
+    return jsonify({"success": True, "token": token})
+
+
+@app.route('/api/restrim/settings', methods=['GET'])
+def restrim_get_settings():
+    if not _check_restrim_token():
+        return jsonify({"success": False, "message": "unauthorized"}), 401
+    cfg = _read_restrim_config()
+    return jsonify({
+        "mixcloud": {
+            "enabled": bool(cfg["mixcloud"].get("enabled")),
+            "quality": cfg["mixcloud"].get("quality", "750"),
+            "server": cfg["mixcloud"].get("rtmp_url", "") or "rtmp://rtmp.mixcloud.com/stream",
+            "key": cfg["mixcloud"].get("stream_key", ""),
+        },
+        "extra": {
+            "enabled": bool(cfg["extra"].get("enabled")),
+            "name": cfg["extra"].get("name", ""),
+            "quality": cfg["extra"].get("quality", "750"),
+            "server": cfg["extra"].get("rtmp_url", ""),
+            "key": cfg["extra"].get("stream_key", ""),
+        }
+    })
+
+
+@app.route('/api/restrim/settings', methods=['POST'])
+def restrim_save_settings():
+    if not _check_restrim_token():
+        return jsonify({"success": False, "message": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    cfg = _read_restrim_config()
+
+    for svc in ("mixcloud", "extra"):
+        if svc not in body:
+            continue
+        src = body[svc] or {}
+        dst = cfg.setdefault(svc, {})
+        if "enabled" in src:
+            dst["enabled"] = bool(src["enabled"])
+        if "quality" in src and src["quality"] in ("450", "750", "1080", "max"):
+            dst["quality"] = src["quality"]
+        if "server" in src:
+            dst["rtmp_url"] = str(src["server"]).strip()
+        if "rtmp_url" in src:
+            dst["rtmp_url"] = str(src["rtmp_url"]).strip()
+        if svc == "extra" and "name" in src:
+            dst["name"] = str(src["name"]).strip() or "Extra"
+        key_val = src.get("key", src.get("stream_key", None))
+        if key_val is not None and str(key_val).strip():
+            key = str(key_val).strip()
+            if "…" not in key and "****" not in key:
+                dst["stream_key"] = key
+
+    _write_restrim_config(cfg)
+    logging.info("restrim settings saved")
+    return jsonify({"success": True, "message": "saved"})
+
+
+@app.route('/api/restrim/status', methods=['GET'])
+def restrim_status():
+    if not _check_restrim_token():
+        return jsonify({"success": False, "message": "unauthorized"}), 401
+    cfg = _read_restrim_config()
+    video_active = is_video_live()
+
+    return jsonify({
+        "video_stream_active": video_active,
+        "mixcloud": {
+            "enabled": bool(cfg["mixcloud"].get("enabled")),
+            "quality": cfg["mixcloud"].get("quality", "750"),
+            "running": is_restream_process_running("mixcloud"),
+        },
+        "extra": {
+            "enabled": bool(cfg["extra"].get("enabled")),
+            "name": cfg["extra"].get("name", "Extra"),
+            "quality": cfg["extra"].get("quality", "750"),
+            "running": is_restream_process_running("extra"),
+        }
+    })
+
+
+# ==================== HLS TRANSCODER ====================
+
+def is_transcoder_running():
+    try:
+        r = subprocess.run(
+            ['/usr/bin/pgrep', '-f', FFMPEG_PGREP],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        if r.returncode == 0:
+            return True
+        r2 = subprocess.run(
+            ['/usr/bin/pgrep', '-f', 'hls_transcoder.sh'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        return r2.returncode == 0
+    except Exception as e:
+        logging.error(f"is_transcoder_running error: {e}")
+        return False
+
+
+def start_transcoder():
+    try:
+        if is_transcoder_running():
+            logging.info("Transcoder already running, skip start")
+            return
+        subprocess.Popen(
+            ['/bin/bash', TRANSCODER_SCRIPT],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        logging.info("HLS transcoder start requested")
+    except Exception as e:
+        logging.error(f"Failed to start HLS transcoder: {e}")
+
+
+def stop_transcoder():
+    try:
+        if not is_transcoder_running():
+            return
+        # только transcoder, не restrim
+        subprocess.run(
+            ['/usr/bin/pkill', '-f', 'ffmpeg -y -i rtmp://127.0.0.1/live/video_stream123'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        subprocess.run(
+            ['/usr/bin/pkill', '-f', 'hls_transcoder.sh'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        try:
+            os.remove('/tmp/hls_transcoder.lock')
+        except FileNotFoundError:
+            pass
+        logging.info("HLS transcoder stopped")
+    except Exception as e:
+        logging.error(f"Failed to stop HLS transcoder: {e}")
+
+
+def manage_hls_transcoder():
+    logging.info("HLS transcoder manager started")
+    while True:
+        try:
+            video_active = is_video_live()
+            running = is_transcoder_running()
+
+            if video_active and not running:
+                logging.info("Video stream detected → starting transcoder")
+                start_transcoder()
+            elif not video_active and running:
+                logging.info("Video stream gone → stopping transcoder")
+                stop_transcoder()
+        except Exception as e:
+            logging.error(f"manage_hls_transcoder error: {e}")
+
+        time.sleep(TRANSCODER_CHECK_INTERVAL)
+
+
+def get_db():
+    try:
+        conn = sqlite3.connect('/home/beasty197/projects/vtrnk_radio/data/radio.db')
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        logging.error(f"Error connecting to database: {str(e)}")
+        raise
+
+
+def check_stream_status():
+    audio_stream_active = False
+    video_stream_active = False
+    listeners_count = 0
+
+    try:
+        url = f'http://{ICECAST_HOST}:{ICECAST_PORT}/status-json.xsl'
+        response = requests.get(
+            url,
+            auth=(ICECAST_ADMIN_USER, ICECAST_ADMIN_PASSWORD),
+            timeout=5
+        )
+        response.raise_for_status()
+        data = json.loads(response.text)
+
+        if 'icestats' in data and 'source' in data['icestats']:
+            sources = data['icestats']['source']
+            if isinstance(sources, list):
+                for source in sources:
+                    if source.get('listenurl', '').endswith(ICECAST_MOUNT):
+                        audio_stream_active = True
+                        listeners_count = int(source.get('listeners', 0))
+                        break
+            elif sources.get('listenurl', '').endswith(ICECAST_MOUNT):
+                audio_stream_active = True
+                listeners_count = int(sources.get('listeners', 0))
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Ошибка при запросе к Icecast: {str(e)}")
+    except json.JSONDecodeError as e:
+        logging.error(f"Ошибка парсинга JSON от Icecast: {str(e)}")
+
+    video_stream_active = is_video_live()
+    if video_stream_active:
+        try:
+            age = time.time() - os.path.getmtime(HLS_FILE)
+            logging.info(f"Видеопоток найден, возраст: {age} сек")
+        except Exception:
+            pass
+    else:
+        logging.warning("Видеопоток не найден или устарел")
+
+    return {
+        "audio_stream_active": audio_stream_active,
+        "video_stream_active": video_stream_active,
+        "listeners_count": listeners_count
+    }
+
+
+def get_current_track():
+    try:
+        with open(CURRENT_TRACK_FILE, 'r') as f:
+            data = json.load(f)
+        track_data = {}
+        for item in data:
+            track_data[item[0]] = item[1]
+        return track_data
+    except Exception as e:
+        logging.error(f"Error reading current track: {str(e)}")
+        return {"filename": "", "artist": "VTRNK", "title": "Radio Show"}
+
+
+def get_cover_path(filename):
+    if not filename:
+        return "/images/placeholder2.png"
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT path_img FROM tracks WHERE path = ?", (filename,))
+        track = cursor.fetchone()
+        conn.close()
+        if track and track['path_img']:
+            return track['path_img']
+        return "/images/placeholder2.png"
+    except Exception as e:
+        logging.error(f"Error fetching cover path: {str(e)}")
+        return "/images/placeholder2.png"
+
+
+def restart_liquidsoap():
+    try:
+        subprocess.run(
+            ['sudo', 'systemctl', 'restart', 'liquidsoap'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        logging.info("Liquidsoap успешно перезапущен")
+        return {"status": "success", "message": "Liquidsoap restarted successfully"}
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Ошибка при перезапуске Liquidsoap: {str(e)}")
+        return {"status": "error", "message": f"Failed to restart Liquidsoap: {str(e)}"}
+    except Exception as e:
+        logging.error(f"Неизвестная ошибка при перезапуске Liquidsoap: {str(e)}")
+        return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+
+
+@app.route('/radio_status', methods=['GET'])
+def get_radio_status():
+    try:
+        stream_status = check_stream_status()
+        current_track = get_current_track()
+        current_cover = get_cover_path(current_track.get("filename", ""))
+
+        next_track = ""
+        next_cover = "/images/placeholder2.png"
+        try:
+            next_track_response = requests.get('http://localhost:5001/get_next_track', timeout=3)
+            next_track_data = next_track_response.json()
+            next_track = next_track_data.get("next_track", "")
+            next_cover = next_track_data.get("cover_path", "/images/placeholder2.png")
+        except Exception as e:
+            logging.warning(f"get_next_track failed: {e}")
+
+        memory = psutil.virtual_memory()
+        memory_free = round(memory.available / (1024 * 1024), 2)
+        memory_used = round(memory.used / (1024 * 1024), 2)
+        memory_free_percent = round(memory.available / memory.total * 100, 2)
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        return jsonify({
+            "audio_stream_active": stream_status["audio_stream_active"],
+            "video_stream_active": stream_status["video_stream_active"],
+            "listeners_count": stream_status["listeners_count"],
+            "current_track": {
+                "filename": current_track.get("filename", ""),
+                "artist": current_track.get("artist", "VTRNK"),
+                "title": current_track.get("title", "Radio Show"),
+                "cover_path": current_cover
+            },
+            "next_track": {
+                "filename": next_track,
+                "cover_path": next_cover
+            },
+            "server_info": {
+                "memory_free_mb": memory_free,
+                "memory_used_mb": memory_used,
+                "memory_free_percent": memory_free_percent
+            },
+            "current_time": current_time,
+            "playback_mode": PLAYBACK_MODE
+        })
+    except Exception as e:
+        logging.error(f"Error in get_radio_status: {str(e)}")
+        return jsonify({
+            "audio_stream_active": False,
+            "video_stream_active": False,
+            "listeners_count": 0,
+            "current_track": {
+                "filename": "",
+                "artist": "VTRNK",
+                "title": "Radio Show",
+                "cover_path": "/images/placeholder2.png"
+            },
+            "next_track": {
+                "filename": "",
+                "cover_path": "/images/placeholder2.png"
+            },
+            "server_info": {
+                "memory_free_mb": 0,
+                "memory_used_mb": 0,
+                "memory_free_percent": 0
+            },
+            "current_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "playback_mode": PLAYBACK_MODE
+        }), 500
+
+
+@app.route('/restart_liquidsoap', methods=['POST'])
+def restart_liquidsoap_endpoint():
+    try:
+        result = restart_liquidsoap()
+        return jsonify(result), 200 if result["status"] == "success" else 500
+    except Exception as e:
+        logging.error(f"Error in restart_liquidsoap_endpoint: {str(e)}")
+        return jsonify({"status": "error", "message": f"Unexpected error: {str(e)}"}), 500
+
+
+if __name__ == "__main__":
+    if not ICECAST_ADMIN_PASSWORD:
+        logging.warning("ICECAST_ADMIN_PASSWORD is empty — check .env")
+    if not RESTRIM_ADMIN_PASSWORD:
+        logging.warning("RESTRIM_ADMIN_PASSWORD is empty — restrim login disabled until set in .env")
+    threading.Thread(target=manage_hls_transcoder, daemon=True).start()
+    threading.Thread(target=manage_restrim, daemon=True).start()
+    logging.info("Запуск сервера мониторинга...")
+    app.run(host='0.0.0.0', port=5002, debug=False)
