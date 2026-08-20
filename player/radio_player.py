@@ -1527,10 +1527,11 @@ def toggle_audio_stream():
         data = request.get_json()
         arg = data.get('arg', 'toggle')  # 'on', 'off', 'toggle'
         password = data.get('password', '')
+        expected_password = os.getenv('STREAM_RESUME_PASSWORD') or ''
 
-        # При включении проверяем пароль
-        if arg == 'on' and password != 'BeastyOK':
-            logger.warning(f"Попытка включить стрим с неверным паролем: {password}")
+        # При включении проверяем пароль из .env
+        if arg == 'on' and (not expected_password or password != expected_password):
+            logger.warning("Попытка включить стрим с неверным паролем")
             return jsonify({'success': False, 'error': 'Неверный пароль'}), 403
 
         # Отправляем команду в Liquidsoap
