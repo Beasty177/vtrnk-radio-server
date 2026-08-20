@@ -156,6 +156,37 @@
         .copy-btn:hover { background: #5a6268; }
         .delete-program-btn { background: #dc3545; color: white; }
         .delete-program-btn:hover { background: #c82333; }
+        .air-btn { background: #28a745; color: white; }
+        .air-btn:hover { background: #1e7e34; }
+        .air-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+        .unair-btn { background: #fd7e14; color: white; }
+        .unair-btn:hover { background: #e36c0a; }
+        .delete-file-btn { background: #dc3545; color: white; }
+        .delete-file-btn:hover { background: #c82333; }
+
+        #podcastAirBlock, #streamReadyBlock {
+            display: none;
+            margin: 24px 0;
+            padding: 16px;
+            border: 1px solid #444;
+            border-radius: 8px;
+            background: #181818;
+        }
+        #podcastAirBlock h3, #streamReadyBlock h3 { margin: 0 0 12px 0; font-size: 1.1em; color: #eee; }
+        .air-checklist { list-style: none; padding: 0; margin: 0 0 16px 0; }
+        .air-checklist li { padding: 4px 0; color: #ccc; font-size: 0.95em; }
+        .air-checklist .ok { color: #6fcf97; }
+        .air-checklist .bad { color: #e57373; }
+        .air-checklist .warn { color: #ffc107; }
+        .stream-ready-status { margin: 0; font-size: 0.95em; }
+        .stream-ready-status.ok { color: #6fcf97; font-weight: 600; }
+        .stream-ready-status.wait { color: #ffc107; }
+        .podcast-file-hint { color: #888; font-size: 0.85em; margin: 6px 0 12px; }
+        .podcast-file-name { color: #ddd; margin: 8px 0; word-break: break-all; }
+        .air-file-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+        .air-file-actions button { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.95em; }
+        .program-status { font-size: 0.8em; color: #aaa; display: block; margin-top: 4px; }
+        .program-status.on-air, .program-status.stream-ready { color: #6fcf97; }
 
         @media (max-width: 768px) {
             .add-btn { width: 100%; min-width: auto; }
@@ -299,6 +330,28 @@
                     <textarea id="socialLinks" rows="3" maxlength="1000" placeholder="https://instagram.com/...&#10;https://t.me/..."></textarea>
                 </div>
 
+                <div id="podcastAirBlock">
+                    <h3>Подкаст в эфир</h3>
+                    <ul class="air-checklist" id="airChecklist"></ul>
+                    <div class="form-group">
+                        <label>Файл подкаста</label>
+                        <input type="file" id="podcastFile" accept=".mp3,audio/mpeg">
+                        <p class="podcast-file-hint">Только MP3, до 300 МБ</p>
+                        <div class="podcast-file-name" id="podcastFileName"></div>
+                    </div>
+                    <div class="air-file-actions">
+                        <button type="button" id="airBtn" class="air-btn" disabled>Добавить подкаст в эфир</button>
+                        <button type="button" id="unairBtn" class="unair-btn" style="display:none;">Убрать из эфира</button>
+                        <button type="button" id="deleteFileBtn" class="delete-file-btn" style="display:none;">Удалить файл</button>
+                    </div>
+                </div>
+
+                <div id="streamReadyBlock">
+                    <h3>Аудио стрим</h3>
+                    <ul class="air-checklist" id="streamChecklist"></ul>
+                    <p id="streamReadyStatus" class="stream-ready-status"></p>
+                </div>
+
                 <div class="modal-actions">
                     <button type="button" class="cancel-btn" onclick="closeModal()">Отмена</button>
                     <button type="button" class="copy-btn" onclick="copyProgram()">Копировать</button>
@@ -314,6 +367,160 @@
         let currentEditId = null;
         let currentPosterFile = null;
         let existingPosterUrl = null;
+        let existingTrackPath = null;
+        let existingTimerId = null;
+        const MAX_PODCAST_BYTES = 300 * 1024 * 1024;
+
+        function isPodcastType() {
+            return document.getElementById('programType').value === 'podcast';
+        }
+
+        function isLiveStreamType() {
+            return document.getElementById('programType').value === 'live';
+        }
+
+        function formHasPoster() {
+            return !!(currentPosterFile || existingPosterUrl);
+        }
+
+        function renderChecklist(ul, items) {
+            if (!ul) return;
+            ul.innerHTML = items.map(i =>
+                `<li class="${i.ok ? 'ok' : 'bad'}">${i.ok ? '✓' : '✗'} ${i.ok ? i.label : i.bad}</li>`
+            ).join('');
+        }
+
+        function streamReadyMissing(p) {
+            const missing = [];
+            if (!(p.name || '').trim()) missing.push('нет названия');
+            if (!(p.author || '').trim()) missing.push('нет автора');
+            if (!(p.description || '').trim()) missing.push('нет описания');
+            if (!(p.poster_url || '').trim()) missing.push('нет афиши');
+            if (!(p.start_time || '').trim()) missing.push('нет даты и времени');
+            return missing;
+        }
+
+        function isLiveStreamReady(p) {
+            return p && p.program_type === 'live' && streamReadyMissing(p).length === 0;
+        }
+
+        function selectedPodcastFile() {
+            const input = document.getElementById('podcastFile');
+            return input && input.files && input.files[0] ? input.files[0] : null;
+        }
+
+        function formatStartTimeRu(value) {
+            if (!value) return '';
+            const d = new Date(value);
+            if (isNaN(d.getTime())) return value;
+            return d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+        }
+
+        function fileBasename(path) {
+            if (!path) return '';
+            return path.split('/').pop();
+        }
+
+        function validatePodcastFile(file) {
+            if (!file) return null;
+            const name = (file.name || '').toLowerCase();
+            if (!name.endsWith('.mp3')) return 'Нужен файл в формате MP3';
+            if (file.size > MAX_PODCAST_BYTES) return 'Файл больше 300 МБ';
+            return null;
+        }
+
+        function updateAirChecklist() {
+            const podcastBlock = document.getElementById('podcastAirBlock');
+            const streamBlock = document.getElementById('streamReadyBlock');
+            const nameOk = document.getElementById('eventName').value.trim().length > 0;
+            const authorOk = document.getElementById('author').value.trim().length > 0;
+            const timeOk = document.getElementById('startDateTime').value.trim().length > 0;
+            const descriptionOk = document.getElementById('description').value.trim().length > 0;
+            const posterOk = formHasPoster();
+
+            if (podcastBlock) {
+                if (!isPodcastType()) {
+                    podcastBlock.style.display = 'none';
+                } else {
+                    podcastBlock.style.display = 'block';
+                    const file = selectedPodcastFile();
+                    const fileError = validatePodcastFile(file);
+                    const fileOk = !!file || !!existingTrackPath;
+                    const items = [
+                        { ok: nameOk, label: 'Название', bad: 'нет названия' },
+                        { ok: authorOk, label: 'Автор', bad: 'нет автора' },
+                        { ok: timeOk, label: 'Дата и время', bad: 'нет даты и времени' },
+                        { ok: fileOk && !fileError, label: 'Файл MP3', bad: fileError || 'нет файла' },
+                    ];
+                    const ul = document.getElementById('airChecklist');
+                    renderChecklist(ul, items);
+                    ul.innerHTML += `<li class="${posterOk ? 'ok' : 'warn'}">${posterOk ? '✓ Афиша' : '⚠ Афиша — будет заглушка'}</li>`;
+
+                    const nameEl = document.getElementById('podcastFileName');
+                    if (file) {
+                        nameEl.textContent = 'Выбран: ' + file.name;
+                    } else if (existingTrackPath) {
+                        nameEl.textContent = 'В карточке: ' + fileBasename(existingTrackPath);
+                    } else {
+                        nameEl.textContent = '';
+                    }
+
+                    const canAir = nameOk && authorOk && timeOk && fileOk && !fileError;
+                    document.getElementById('airBtn').disabled = !canAir;
+                    document.getElementById('unairBtn').style.display = existingTimerId ? 'inline-block' : 'none';
+                    document.getElementById('deleteFileBtn').style.display = existingTrackPath ? 'inline-block' : 'none';
+                }
+            }
+
+            if (streamBlock) {
+                if (!isLiveStreamType()) {
+                    streamBlock.style.display = 'none';
+                } else {
+                    streamBlock.style.display = 'block';
+                    const items = [
+                        { ok: nameOk, label: 'Название', bad: 'нет названия' },
+                        { ok: authorOk, label: 'Автор', bad: 'нет автора' },
+                        { ok: descriptionOk, label: 'Описание', bad: 'нет описания' },
+                        { ok: posterOk, label: 'Афиша', bad: 'нет афиши' },
+                        { ok: timeOk, label: 'Дата и время', bad: 'нет даты и времени' },
+                    ];
+                    renderChecklist(document.getElementById('streamChecklist'), items);
+                    const ready = items.every(i => i.ok);
+                    const statusEl = document.getElementById('streamReadyStatus');
+                    statusEl.className = 'stream-ready-status ' + (ready ? 'ok' : 'wait');
+                    statusEl.textContent = ready
+                        ? 'Радио стрим готов к эфиру'
+                        : 'Не хватает данных для аудиострима';
+                }
+            }
+        }
+
+        function applyAirState(program) {
+            existingTrackPath = program && program.track_path ? program.track_path : null;
+            existingTimerId = program && program.timer_id ? program.timer_id : null;
+            updateAirChecklist();
+        }
+
+        function programStatusText(p) {
+            if (p.program_type === 'live') {
+                const missing = streamReadyMissing(p);
+                if (!missing.length) return 'радио стрим готов к эфиру';
+                return missing.join(' · ');
+            }
+            if (p.program_type !== 'podcast') return '';
+            const bits = [];
+            if (p.timer_id) bits.push('в эфире');
+            else if (!p.track_path) bits.push('нет файла');
+            else bits.push('файл не в таймере');
+            if (!p.poster_url) bits.push('нет афиши');
+            return bits.join(' · ');
+        }
+
+        function programStatusClass(p) {
+            if (p.timer_id) return 'program-status on-air';
+            if (isLiveStreamReady(p)) return 'program-status stream-ready';
+            return 'program-status';
+        }
 
         function toggleCategory(category) {
             const list = document.getElementById(`${category}List`);
@@ -424,9 +631,9 @@
                         row.onclick = () => openEditModal(p);
 
                         const startStr = new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'});
-
+                        const status = programStatusText(p);
                         row.innerHTML = `
-                            <td>${p.name || 'Без названия'}</td>
+                            <td>${p.name || 'Без названия'}${status ? `<span class="${programStatusClass(p)}">${status}</span>` : ''}</td>
                             <td>${p.author || '—'}</td>
                             <td>${startStr}</td>
                         `;
@@ -462,9 +669,9 @@
                         row.onclick = () => openEditModal(p);
 
                         const startStr = new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'});
-
+                        const status = programStatusText(p);
                         row.innerHTML = `
-                            <td>${p.name || 'Без названия'}</td>
+                            <td>${p.name || 'Без названия'}${status ? `<span class="${programStatusClass(p)}">${status}</span>` : ''}</td>
                             <td>${p.author || '—'}</td>
                             <td>${startStr}</td>
                         `;
@@ -497,9 +704,9 @@
                     row.onclick = () => openEditModal(p);
 
                     const startStr = new Date(p.start_time).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'});
-
+                    const status = programStatusText(p);
                     row.innerHTML = `
-                        <td>${p.name || 'Без названия'}</td>
+                        <td>${p.name || 'Без названия'}${status ? `<span class="${programStatusClass(p)}">${status}</span>` : ''}</td>
                         <td>${p.author || '—'}</td>
                         <td>${startStr}</td>
                     `;
@@ -538,8 +745,12 @@
             document.getElementById('modalPoster').style.display = 'none';
             document.getElementById('modalPosterPlaceholder').style.display = 'flex';
             currentPosterFile = null;
+            existingTrackPath = null;
+            existingTimerId = null;
+            document.getElementById('podcastFile').value = '';
             document.getElementById('deleteProgramBtn').style.display = 'none';
             document.getElementById('programModal').style.display = 'flex';
+            updateAirChecklist();
         }
 
         function openEditModal(program) {
@@ -576,14 +787,19 @@
 
             document.getElementById('posterPreview').style.display = 'none';
             currentPosterFile = null;
+            document.getElementById('podcastFile').value = '';
+            existingTrackPath = program.track_path || null;
+            existingTimerId = program.timer_id || null;
 
             document.getElementById('deleteProgramBtn').style.display = 'inline-block';
             document.getElementById('programModal').style.display = 'flex';
+            updateAirChecklist();
         }
 
         function toggleCustomType() {
             document.getElementById('customType').style.display = 
                 document.getElementById('programType').value === 'custom' ? 'block' : 'none';
+            updateAirChecklist();
         }
 
         function uploadPoster() {
@@ -603,6 +819,7 @@
                 document.getElementById('modalPoster').style.display = 'block';
                 document.getElementById('modalPosterPlaceholder').style.display = 'none';
                 currentPosterFile = file;
+                updateAirChecklist();
             };
             reader.readAsDataURL(file);
         }
@@ -615,6 +832,8 @@
             document.getElementById('modalPoster').style.display = 'none';
             document.getElementById('modalPosterPlaceholder').style.display = 'flex';
             currentPosterFile = null;
+            existingPosterUrl = null;
+            updateAirChecklist();
 
             if (currentEditId) {
                 fetch(`/next-show/${currentEditId}/clear_poster`, {
@@ -629,9 +848,7 @@
             }
         }
 
-        document.getElementById('programForm').addEventListener('submit', async e => {
-            e.preventDefault();
-
+        function buildProgramFormData() {
             const name = document.getElementById('eventName').value.trim();
             const author = document.getElementById('author').value.trim();
             const description = document.getElementById('description').value.trim();
@@ -640,23 +857,23 @@
 
             if (name.length > 200) {
                 alert('Название события не может превышать 200 символов');
-                return;
+                return null;
             }
             if (author.length > 200) {
                 alert('Имя автора не может превышать 200 символов');
-                return;
+                return null;
             }
             if (description.length > 1000) {
                 alert('Описание не может превышать 1000 символов');
-                return;
+                return null;
             }
             if (customType.length > 1000) {
                 alert('Свой вариант не может превышать 1000 символов');
-                return;
+                return null;
             }
             if (socialLinks.length > 1000) {
                 alert('Ссылки не могут превышать 1000 символов');
-                return;
+                return null;
             }
 
             const hours = parseInt(document.getElementById('durationHours').value) || 0;
@@ -664,8 +881,8 @@
             const durationMin = hours * 60 + minutes;
 
             if (durationMin < 10) {
-                console.warn('Минимальная продолжительность — 10 минут');
-                return;
+                alert('Минимальная продолжительность — 10 минут');
+                return null;
             }
 
             const formData = new FormData();
@@ -685,8 +902,21 @@
             if (currentPosterFile) {
                 formData.append('poster', currentPosterFile);
             }
+            return formData;
+        }
 
-            console.log('Отправляем форму:', [...formData.entries()]);
+        async function parseJsonSafe(resp) {
+            const text = await resp.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                return { error: text || ('HTTP ' + resp.status) };
+            }
+        }
+
+        async function saveProgram(closeAfter) {
+            const formData = buildProgramFormData();
+            if (!formData) return null;
 
             const url = currentEditId ? `/next-show/${currentEditId}` : '/next-show';
             const method = currentEditId ? 'PUT' : 'POST';
@@ -697,19 +927,126 @@
                     body: formData,
                     credentials: 'include'
                 });
-
-                if (resp.ok) {
-                    console.log(currentEditId ? 'Программа обновлена' : 'Программа добавлена');
-                    closeModal();
-                    fetchPrograms();
-                } else {
-                    const errText = await resp.text();
-                    console.error('Ошибка сервера:', resp.status, errText);
+                const data = await parseJsonSafe(resp);
+                if (!resp.ok) {
+                    alert(data.error || 'Ошибка сохранения');
+                    return null;
                 }
+                if (!currentEditId && data.id) {
+                    currentEditId = data.id;
+                    document.getElementById('deleteProgramBtn').style.display = 'inline-block';
+                    document.getElementById('modalTitle').textContent = 'Редактировать программу';
+                }
+                if (currentPosterFile && data) {
+                    existingPosterUrl = existingPosterUrl;
+                }
+                await fetchPrograms();
+                if (currentEditId) {
+                    const saved = programsData.find(p => p.id === currentEditId);
+                    if (saved && saved.poster_url) existingPosterUrl = saved.poster_url;
+                    currentPosterFile = null;
+                    applyAirState(saved || { track_path: existingTrackPath, timer_id: existingTimerId });
+                }
+                if (closeAfter) closeModal();
+                return currentEditId;
             } catch (err) {
                 console.error('Ошибка сети:', err);
+                alert('Ошибка сети при сохранении');
+                return null;
             }
+        }
+
+        document.getElementById('programForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            await saveProgram(true);
         });
+
+        async function addPodcastToAir() {
+            const file = selectedPodcastFile();
+            const fileError = validatePodcastFile(file);
+            if (fileError) {
+                alert(fileError);
+                return;
+            }
+            if (!file && !existingTrackPath) {
+                alert('Выберите файл MP3');
+                return;
+            }
+
+            const name = document.getElementById('eventName').value.trim();
+            const author = document.getElementById('author').value.trim();
+            const when = formatStartTimeRu(document.getElementById('startDateTime').value);
+            if (!confirm(`Добавить в эфир ${when} — ${name} — ${author}?`)) return;
+
+            const id = await saveProgram(false);
+            if (!id) return;
+
+            const fd = new FormData();
+            if (file) fd.append('podcast', file);
+
+            try {
+                const resp = await fetch(`/next-show/${id}/air`, {
+                    method: 'POST',
+                    body: fd,
+                    credentials: 'include'
+                });
+                const data = await parseJsonSafe(resp);
+                if (!resp.ok) {
+                    alert(data.error || 'Не удалось поставить в эфир');
+                    return;
+                }
+                document.getElementById('podcastFile').value = '';
+                applyAirState(data.program);
+                await fetchPrograms();
+                alert('Подкаст добавлен в эфир');
+            } catch (err) {
+                console.error(err);
+                alert('Ошибка сети при постановке в эфир');
+            }
+        }
+
+        async function removeFromAir() {
+            if (!currentEditId) return;
+            if (!confirm('Убрать подкаст из таймера эфира? Карточка на сайте останется.')) return;
+            try {
+                const resp = await fetch(`/next-show/${currentEditId}/unair`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const data = await parseJsonSafe(resp);
+                if (!resp.ok) {
+                    alert(data.error || 'Не удалось убрать из эфира');
+                    return;
+                }
+                applyAirState(data.program);
+                await fetchPrograms();
+            } catch (err) {
+                console.error(err);
+                alert('Ошибка сети');
+            }
+        }
+
+        async function deletePodcastFile() {
+            if (!currentEditId) return;
+            if (!confirm('Удалить файл подкаста из карточки и снять его с эфира?')) return;
+            try {
+                const resp = await fetch(`/next-show/${currentEditId}/file`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+                const data = await parseJsonSafe(resp);
+                if (!resp.ok) {
+                    alert(data.error || 'Не удалось удалить файл');
+                    return;
+                }
+                document.getElementById('podcastFile').value = '';
+                applyAirState(data.program);
+                await fetchPrograms();
+            } catch (err) {
+                console.error(err);
+                alert('Ошибка сети');
+            }
+        }
 
         async function deleteProgram() {
             if (!confirm('Удалить программу навсегда?')) return;
@@ -769,7 +1106,10 @@
 
             document.getElementById('deleteProgramBtn').style.display = 'none';
             document.getElementById('modalTitle').textContent = 'Добавить программу (скопировано)';
-            console.log('Форма заполнена копией программы (без даты, афиша сохранена)');
+            existingTrackPath = null;
+            existingTimerId = null;
+            document.getElementById('podcastFile').value = '';
+            updateAirChecklist();
         }
 
         function closeModal() {
@@ -777,7 +1117,27 @@
             currentEditId = null;
             currentPosterFile = null;
             existingPosterUrl = null;
+            existingTrackPath = null;
+            existingTimerId = null;
+            document.getElementById('podcastFile').value = '';
         }
+
+        document.getElementById('airBtn').addEventListener('click', addPodcastToAir);
+        document.getElementById('unairBtn').addEventListener('click', removeFromAir);
+        document.getElementById('deleteFileBtn').addEventListener('click', deletePodcastFile);
+        ['eventName', 'author', 'startDateTime', 'programType', 'description'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateAirChecklist);
+            document.getElementById(id).addEventListener('change', updateAirChecklist);
+        });
+        document.getElementById('podcastFile').addEventListener('change', () => {
+            const file = selectedPodcastFile();
+            const err = validatePodcastFile(file);
+            if (err) {
+                alert(err);
+                document.getElementById('podcastFile').value = '';
+            }
+            updateAirChecklist();
+        });
 
         fetchPrograms();
     </script>

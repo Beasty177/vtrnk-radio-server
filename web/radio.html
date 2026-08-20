@@ -167,6 +167,17 @@
         .schedule-table .program-row {
             cursor: pointer;
         }
+        .schedule-table .program-row.on-air td {
+            font-weight: bold;
+            color: #fff;
+            background: rgba(255,255,255,0.14);
+        }
+        .schedule-table .on-air-label {
+            font-size: 0.75em;
+            letter-spacing: 0.04em;
+            margin-left: 8px;
+            opacity: 0.85;
+        }
         .footer {
             text-align: center;
             padding: 20px 15px 15px;
@@ -690,6 +701,18 @@
             if (e.target === programModal) closeProgramModal();
         });
 
+        function programEnd(p) {
+            const start = new Date(p.start_time);
+            const mins = Number(p.duration_minutes) || 60;
+            return new Date(start.getTime() + mins * 60000);
+        }
+
+        function radioDayKey(date) {
+            const d = new Date(date);
+            if (d.getHours() < 6) d.setDate(d.getDate() - 1);
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
         async function loadSchedule() {
             try {
                 const resp = await fetch('/next-show', { credentials: 'include' });
@@ -697,14 +720,15 @@
                 const programs = await resp.json();
                 const tbody = document.getElementById('schedule-body');
                 tbody.innerHTML = '';
-                const future = programs
-                    .filter(p => new Date(p.start_time) > new Date())
+                const now = new Date();
+                const upcoming = programs
+                    .filter(p => programEnd(p) > now)
                     .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
                     .slice(0, 15);
                 let prevDay = null;
-                future.forEach(p => {
+                upcoming.forEach(p => {
                     const date = new Date(p.start_time);
-                    const dayKey = date.toISOString().split('T')[0];
+                    const dayKey = radioDayKey(date);
                     if (dayKey !== prevDay) {
                         const row = document.createElement('tr');
                         row.className = 'day-header';
@@ -712,16 +736,17 @@
                         tbody.appendChild(row);
                         prevDay = dayKey;
                     }
+                    const onAir = date <= now && programEnd(p) > now;
                     const row = document.createElement('tr');
-                    row.className = 'program-row';
+                    row.className = 'program-row' + (onAir ? ' on-air' : '');
                     row.innerHTML = `
                         <td>${date.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}</td>
-                        <td>${p.name || '—'}</td>
+                        <td>${p.name || '—'}${onAir ? '<span class="on-air-label">в эфире</span>' : ''}</td>
                     `;
                     row.addEventListener('click', () => openProgramModal(p));
                     tbody.appendChild(row);
                 });
-                if (!future.length) {
+                if (!upcoming.length) {
                     tbody.innerHTML = `<tr><td colspan="2" style="text-align:center;padding:30px;color:#777;">Нет запланированных передач</td></tr>`;
                 }
             } catch (e) {

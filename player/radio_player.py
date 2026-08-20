@@ -9,6 +9,7 @@ import telnetlib
 import threading
 import time
 import os
+import sys
 from dotenv import load_dotenv
 import random
 from datetime import datetime, timedelta
@@ -37,6 +38,13 @@ UPLOAD_TRACK_DIR = os.getenv('UPLOAD_TRACK_DIR', '/home/beasty197/projects/vtrnk
 IMAGES_DIR = os.getenv('IMAGES_DIR', '/home/beasty197/projects/vtrnk_radio/images')
 LIVE_STREAM_COVERS_DIR = os.getenv('LIVE_STREAM_COVERS_DIR', '/home/beasty197/projects/vtrnk_radio/images/live_stream_covers')
 PLACEHOLDER_LIVE_STREAM = os.getenv('PLACEHOLDER_LIVE_STREAM', '/home/beasty197/projects/vtrnk_radio/images/placeholder_live_stream.png')
+SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scripts')
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+from schedule_db import get_on_air_program
+
+current_track_file_lock = threading.Lock()
+LIVE_SCHEDULE_REFRESH_SEC = 15
 
 # Playback settings
 MAX_HISTORY_SIZE = 90  # Maximum tracks in playback history
@@ -102,6 +110,112 @@ def get_live_stream_by_code(show_code):
     except Exception as e:
         logger.error(f"Error fetching live stream by code {show_code}: {str(e)}")
         return None
+
+
+def normalize_show_code(title_from_request):
+    title = (title_from_request or '').strip()
+    if not title or title in ('Unknown Title', 'Radio Show'):
+        return ''
+    return title
+
+
+def schedule_cover_path(program):
+    poster = (program.get('poster_url') or '').strip() if program else ''
+    return poster if poster.startswith('/') else '/images/placeholder_live_stream.png'
+
+
+def apply_live_identity(current_track_json, title_from_request):
+    """Fill live artist/title/cover: show_code in live_streams, else on-air schedule, else placeholder."""
+    show_code = normalize_show_code(title_from_request)
+    stream = get_live_stream_by_code(show_code) if show_code else None
+    if stream:
+        current_track_json['artist'] = stream['author']
+        current_track_json['title'] = stream['name']
+        current_track_json['cover_path'] = stream['cover_path']
+        current_track_json['show_code'] = show_code
+        current_track_json['live_source'] = 'show_code'
+        current_track_json['schedule_program_id'] = ''
+        logger.info(
+            f"Detected matched live stream: code={show_code}, author={stream['author']}, "
+            f"name={stream['name']}, cover={stream['cover_path']}"
+        )
+        return current_track_json
+
+    program = get_on_air_program()
+    if program:
+        artist = (program.get('author') or '').strip() or 'VTRNK'
+        title = (program.get('name') or '').strip() or 'Radio Show'
+        cover = schedule_cover_path(program)
+        current_track_json['artist'] = artist
+        current_track_json['title'] = title
+        current_track_json['cover_path'] = cover
+        current_track_json['show_code'] = show_code
+        current_track_json['live_source'] = 'schedule'
+        current_track_json['schedule_program_id'] = program.get('id') or ''
+        logger.info(
+            f"Live stream matched schedule program id={program.get('id')}: "
+            f"author={artist}, name={title}, cover={cover}, icy_title={show_code!r}"
+        )
+        return current_track_json
+
+    current_track_json['artist'] = 'Live Stream'
+    current_track_json['title'] = show_code or 'Radio Show'
+    current_track_json['cover_path'] = '/images/placeholder_live_stream.png'
+    current_track_json['show_code'] = show_code
+    current_track_json['live_source'] = 'placeholder'
+    current_track_json['schedule_program_id'] = ''
+    logger.info(f"Detected live stream without DB/schedule match: icy_title={show_code!r}, using placeholder")
+    return current_track_json
+
+
+def live_identity_signature(data):
+    return (
+        data.get('artist'),
+        data.get('title'),
+        data.get('cover_path'),
+        data.get('live_source'),
+        str(data.get('schedule_program_id') or ''),
+        data.get('show_code') or '',
+    )
+
+
+def refresh_live_from_schedule():
+    """While a live stream has no show_code match, keep identity in sync with the schedule window."""
+    with current_track_file_lock:
+        try:
+            with open(CURRENT_TRACK_FILE, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.error(f"refresh_live_from_schedule read error: {str(e)}")
+            return
+        if not data.get('is_live'):
+            return
+        if data.get('live_source') == 'show_code':
+            return
+        before = live_identity_signature(data)
+        apply_live_identity(data, data.get('show_code') or '')
+        if live_identity_signature(data) == before:
+            return
+        try:
+            with open(CURRENT_TRACK_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.error(f"refresh_live_from_schedule write error: {str(e)}")
+            return
+    socketio.emit('track_update', data)
+    logger.info(
+        f"Refreshed live identity from schedule: source={data.get('live_source')}, "
+        f"{data.get('artist')} — {data.get('title')}"
+    )
+
+
+def live_schedule_refresh_loop():
+    while True:
+        try:
+            refresh_live_from_schedule()
+        except Exception as e:
+            logger.error(f"Error in live_schedule_refresh_loop: {str(e)}")
+        time.sleep(LIVE_SCHEDULE_REFRESH_SEC)
 
 def get_random_jingle():
     """Выбирает случайный джингл из БД."""
@@ -498,7 +612,7 @@ def handle_track():
             if not is_live:
                 artist, title, cover = get_track_metadata(filename)
             else:
-                artist, title, cover = "VTRNK", "Radio Show", PLACEHOLDER_LIVE_STREAM
+                artist, title, cover = "VTRNK", "Radio Show", '/images/placeholder_live_stream.png'
             current_track_json = {
                 'filename': filename,
                 'artist': artist,
@@ -513,29 +627,19 @@ def handle_track():
                 'track_queue_timestamp': track_queue_timestamp,
                 'queue': queue,
                 'is_live': is_live,
-                'show_code': ''
+                'show_code': '',
+                'live_source': '',
+                'schedule_program_id': ''
             }
             if is_live:
-                show_code = title_from_request if title_from_request and title_from_request != "Unknown Title" else ""
-                stream = get_live_stream_by_code(show_code)
-                if stream:
-                    current_track_json['artist'] = stream['author']
-                    current_track_json['title'] = stream['name']
-                    current_track_json['cover_path'] = stream['cover_path']
-                    current_track_json['show_code'] = show_code
-                    logger.info(f"Detected matched live stream: code={show_code}, author={stream['author']}, name={stream['name']}, cover={stream['cover_path']}")
-                else:
-                    current_track_json['artist'] = "Live Stream"
-                    current_track_json['title'] = show_code or "Radio Show"
-                    current_track_json['cover_path'] = '/images/placeholder_live_stream.png'
-                    current_track_json['show_code'] = show_code
-                    logger.info(f"Detected live stream without DB match: code={show_code}, using fallback")
+                apply_live_identity(current_track_json, title_from_request)
                 # START OF LIVE STREAM SKIP FEATURE
                 # Запускаем таймер на skip_normal после детекции live-стрима
                 schedule_live_stream_skip()
                 # END OF LIVE STREAM SKIP FEATURE
-            with open(CURRENT_TRACK_FILE, 'w') as f:
-                json.dump(current_track_json, f)
+            with current_track_file_lock:
+                with open(CURRENT_TRACK_FILE, 'w') as f:
+                    json.dump(current_track_json, f)
             last_played = get_last_played_track()
             if last_played != filename and not is_live:
                 logger.info(f"Received and saved track metadata: artist={artist}, title={title}, filename={filename}, queue={queue}")
@@ -571,7 +675,9 @@ def handle_track():
                 ["album", data.get("album", "Radio VTRNK Stream")],
                 ["is_live", data.get("is_live", False)],
                 ["cover_path", data.get("cover_path", "/images/placeholder2.png")],
-                ["show_code", data.get("show_code", "")]
+                ["show_code", data.get("show_code", "")],
+                ["live_source", data.get("live_source", "")],
+                ["schedule_program_id", data.get("schedule_program_id", "")]
             ])
         except Exception as e:
             logger.error(f"Error in handle_track (GET): {str(e)}")
@@ -582,7 +688,9 @@ def handle_track():
                 ["album", "Radio VTRNK Stream"],
                 ["is_live", False],
                 ["cover_path", "/images/placeholder2.png"],
-                ["show_code", ""]
+                ["show_code", ""],
+                ["live_source", ""],
+                ["schedule_program_id", ""]
             ]), 500
 
 @app.route('/track_added_special', methods=['POST'])
@@ -917,6 +1025,7 @@ def schedule_checker():
         pass
 
 threading.Thread(target=schedule_checker, daemon=True).start()
+threading.Thread(target=live_schedule_refresh_loop, daemon=True).start()
 scheduler = AsyncIOScheduler()
 scheduler.add_job(add_track_to_queue, "interval", seconds=10)
 logger.info("Starting scheduler for add_track_to_queue every 10 seconds")
