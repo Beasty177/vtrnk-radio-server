@@ -4,8 +4,9 @@ import logging
 import logging.handlers
 import subprocess
 import json
+import html
 from dotenv import load_dotenv
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import aiohttp
 import asyncio
@@ -44,6 +45,13 @@ DB_PATH = '/home/beasty197/projects/vtrnk_radio/data/radio.db'
 SCHEDULE_DB_PATH = '/home/beasty197/projects/vtrnk_radio/data/schedule.db'
 RESTRIM_CONFIG_PATH = '/home/beasty197/projects/vtrnk_radio/data/restrim.json'
 RESTRIM_POST_DELAY_SEC = 240  # 4 минуты
+RESTRIM_VK_FALLBACK_SEC = 360  # ещё 2 мин ждать live-пост, потом канал Live
+VK_GROUP_DOMAIN = 'vtornikshow'
+VK_GROUP_OWNER_ID = -224542868
+VK_LIVE_URL = 'https://live.vkvideo.ru/vtrnkshow'
+VK_GROUP_PAGE_URL = 'https://vk.ru/vtornikshow'
+VK_API_VERSION = '5.199'
+VK_LIVE_STATUSES = frozenset({'started', 'waiting', 'upcoming'})
 
 
 def track_payload_to_dict(data):
@@ -170,6 +178,320 @@ def is_restrim_process_running(target_id):
     except Exception as e:
         logger.error(f"is_restrim_process_running({target_id}): {e}")
         return False
+
+
+def is_vk_live_target(target):
+    name = (target.get('name') or '').lower()
+    url = (target.get('link_url') or '').lower()
+    return 'vkvideo' in url or 'vk live' in name
+
+
+def _vk_video_is_live(video):
+    if not isinstance(video, dict):
+        return False
+    status = str(video.get('live_status') or '').strip().lower()
+    if status in VK_LIVE_STATUSES:
+        return True
+    if video.get('live') == 1 and status != 'finished':
+        return True
+    return False
+
+
+def _vk_wall_url(owner_id, post_id):
+    return f'https://vk.com/wall{owner_id}_{post_id}'
+
+
+def _vk_post_description(post):
+    text = str(post.get('text') or '').strip()
+    if text:
+        return text
+    for att in post.get('attachments') or []:
+        if not isinstance(att, dict) or att.get('type') != 'video':
+            continue
+        title = str((att.get('video') or {}).get('title') or '').strip()
+        if title:
+            return title
+    return ''
+
+
+def _vk_largest_image_url(images):
+    best_url = None
+    best_w = -1
+    for im in images or []:
+        if not isinstance(im, dict):
+            continue
+        url = im.get('url') or im.get('src')
+        try:
+            w = int(im.get('width') or 0)
+        except (TypeError, ValueError):
+            w = 0
+        if url and w >= best_w:
+            best_w = w
+            best_url = url
+    return best_url
+
+
+def _vk_post_cover_url(post):
+    for att in post.get('attachments') or []:
+        if not isinstance(att, dict):
+            continue
+        if att.get('type') == 'video':
+            video = att.get('video') or {}
+            url = _vk_largest_image_url(video.get('image') or video.get('first_frame'))
+            if url:
+                return url
+        if att.get('type') == 'photo':
+            photo = att.get('photo') or {}
+            url = _vk_largest_image_url(photo.get('sizes'))
+            if url:
+                return url
+    return None
+
+
+def _vk_post_payload(post):
+    pid = post.get('id')
+    owner = post.get('owner_id')
+    if pid is None or owner is None:
+        return None
+    return {
+        'url': _vk_wall_url(owner, pid),
+        'description': _vk_post_description(post),
+        'cover_url': _vk_post_cover_url(post),
+    }
+
+
+def _pick_vk_live_wall_url(items, since_unix):
+    best = None
+    best_date = -1
+    min_date = int(since_unix) - 120
+    for post in items or []:
+        if not isinstance(post, dict):
+            continue
+        if post.get('owner_id') != VK_GROUP_OWNER_ID:
+            continue
+        try:
+            date = int(post.get('date') or 0)
+        except (TypeError, ValueError):
+            date = 0
+        if date < min_date:
+            continue
+        attachments = post.get('attachments') or []
+        has_live = False
+        for att in attachments:
+            if not isinstance(att, dict) or att.get('type') != 'video':
+                continue
+            if _vk_video_is_live(att.get('video') or {}):
+                has_live = True
+                break
+        if not has_live:
+            continue
+        if date >= best_date:
+            payload = _vk_post_payload(post)
+            if payload:
+                best_date = date
+                best = payload
+    return best
+
+
+async def _vk_wall_get(session, count=10):
+    token = (os.getenv('VK_SERVICE_TOKEN') or '').strip()
+    if not token:
+        logger.warning('_vk_wall_get: VK_SERVICE_TOKEN пустой')
+        return None
+    params = {
+        'domain': VK_GROUP_DOMAIN,
+        'count': count,
+        'filter': 'owner',
+        'v': VK_API_VERSION,
+        'access_token': token,
+    }
+    try:
+        async with session.get('https://api.vk.ru/method/wall.get', params=params) as resp:
+            if resp.status != 200:
+                logger.warning('_vk_wall_get: HTTP %s', resp.status)
+                return None
+            data = await resp.json(content_type=None)
+    except Exception as e:
+        logger.error('_vk_wall_get request: %s', e)
+        return None
+    if not isinstance(data, dict):
+        return None
+    err = data.get('error')
+    if err:
+        logger.warning(
+            '_vk_wall_get: VK error %s %s',
+            err.get('error_code'),
+            err.get('error_msg'),
+        )
+        return None
+    return ((data.get('response') or {}).get('items') or [])
+
+
+def _pick_vk_latest_wall_url(items):
+    for post in items or []:
+        if not isinstance(post, dict):
+            continue
+        if post.get('owner_id') != VK_GROUP_OWNER_ID:
+            continue
+        payload = _vk_post_payload(post)
+        if payload:
+            return payload
+    return None
+
+
+async def fetch_vk_live_wall_url(session, since_unix):
+    items = await _vk_wall_get(session, count=10)
+    if items is None:
+        return None
+    payload = _pick_vk_live_wall_url(items, since_unix)
+    if payload:
+        logger.info('fetch_vk_live_wall_url: found %s', payload.get('url'))
+    else:
+        logger.info('fetch_vk_live_wall_url: no live wall post yet')
+    return payload
+
+
+async def fetch_vk_latest_wall_url(session):
+    items = await _vk_wall_get(session, count=5)
+    if items is None:
+        return None
+    payload = _pick_vk_latest_wall_url(items)
+    if payload:
+        logger.info('fetch_vk_latest_wall_url: found %s', payload.get('url'))
+    else:
+        logger.warning('fetch_vk_latest_wall_url: empty wall')
+    return payload
+
+
+def _vk_html_link(url, label):
+    href = html.escape(url or '', quote=True)
+    text = html.escape(label)
+    return f'<a href="{href}">{text}</a>'
+
+
+def _vk_caption_html(link_url: str, kind: str, description=None, limit=1024):
+    """kind: cmd — /vk; auto — рестрим."""
+    pretty_label = 'ссылка на VK сообщества' if kind == 'cmd' else 'сообщество VK'
+    pretty = _vk_html_link(link_url, pretty_label)
+    if kind == 'cmd':
+        desc = html.escape((description or '').strip())
+        body = f'{desc}\n\n{pretty}' if desc else pretty
+    else:
+        body = f'Смотрите нас в VK\n\n{pretty}'
+    if len(body) <= limit:
+        return body
+    extra = len(body) - limit
+    if kind == 'cmd' and description:
+        desc = html.escape((description or '').strip())
+        cut = max(0, len(desc) - extra - 1)
+        desc = desc[:cut] + '…'
+        return f'{desc}\n\n{pretty}'
+    return body[:limit]
+
+
+def _vk_keyboard(link_url: str, kind: str):
+    label = 'Мы в VK' if kind == 'cmd' else 'Стрим в VK'
+    return InlineKeyboardMarkup([[InlineKeyboardButton(label, url=link_url)]])
+
+
+async def post_vk_live_link(
+    context,
+    link_url: str,
+    reason: str,
+    chat_id=None,
+    description=None,
+    cover_url=None,
+    kind='auto',
+):
+    dest = CHANNEL_ID if chat_id is None else chat_id
+    caption = _vk_caption_html(link_url, kind, description)
+    markup = _vk_keyboard(link_url, kind)
+    try:
+        if cover_url:
+            await context.bot.send_photo(
+                chat_id=dest,
+                photo=cover_url,
+                caption=caption,
+                parse_mode='HTML',
+                reply_markup=markup,
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=dest,
+                text=caption or link_url,
+                parse_mode='HTML',
+                reply_markup=markup,
+                link_preview_options=LinkPreviewOptions(
+                    is_disabled=False,
+                    url=link_url,
+                    prefer_large_media=True,
+                    show_above_text=True,
+                ),
+            )
+        logger.info(
+            'VK LIVE POST ok url=%s reason=%s dest=%s cover=%s kind=%s',
+            link_url, reason, dest, bool(cover_url), kind,
+        )
+        return True
+    except Exception as e:
+        logger.error('VK LIVE POST fail: %s', e, exc_info=True)
+        if cover_url:
+            try:
+                await context.bot.send_message(
+                    chat_id=dest,
+                    text=caption or link_url,
+                    parse_mode='HTML',
+                    reply_markup=markup,
+                    link_preview_options=LinkPreviewOptions(
+                        is_disabled=False,
+                        url=link_url,
+                        prefer_large_media=True,
+                        show_above_text=True,
+                    ),
+                )
+                logger.info('VK LIVE POST fallback text url=%s reason=%s', link_url, reason)
+                return True
+            except Exception as e2:
+                logger.error('VK LIVE POST fallback fail: %s', e2, exc_info=True)
+        return False
+
+
+async def cmd_vk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Последний пост стены vtornikshow — ссылка в этот чат (группа) или в CHANNEL_ID."""
+    if not update.message:
+        return
+    timeout = aiohttp.ClientTimeout(total=20)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            payload = await fetch_vk_latest_wall_url(session)
+    except Exception as e:
+        logger.error('/vk fetch: %s', e, exc_info=True)
+        payload = None
+    if not payload or not payload.get('url'):
+        await update.message.reply_text('Не удалось взять пост со стены VK')
+        return
+
+    url = payload['url']
+    chat = update.effective_chat
+    in_group = bool(chat and chat.type in ('group', 'supergroup'))
+    dest = chat.id if in_group else CHANNEL_ID
+    ok = await post_vk_live_link(
+        context,
+        url,
+        reason='cmd_vk',
+        chat_id=dest,
+        description=payload.get('description'),
+        cover_url=payload.get('cover_url'),
+        kind='cmd',
+    )
+    if in_group:
+        if not ok:
+            await update.message.reply_text('Не удалось отправить ссылку')
+        return
+    if ok:
+        await update.message.reply_text(f'Опубликовал в чат:\n{url}')
+    else:
+        await update.message.reply_text('Не удалось отправить в чат')
 
 
 async def post_restrim_link(context, target, reason: str):
@@ -464,13 +786,46 @@ async def monitor_events(context: ContextTypes.DEFAULT_TYPE):
                             f"wait {RESTRIM_POST_DELAY_SEC}s for start-post"
                         )
 
-                    # нужны галочка и ссылка
+                    age = now - restrim_seen_since[tid]
+
+                    # VK Live: ссылка со стены, галочка tg_notify не нужна
+                    if is_vk_live_target(t):
+                        if age >= RESTRIM_POST_DELAY_SEC and tid not in restrim_posted_start:
+                            wall = await fetch_vk_live_wall_url(
+                                session, restrim_seen_since[tid]
+                            )
+                            if wall and wall.get('url'):
+                                ok = await post_vk_live_link(
+                                    context,
+                                    wall['url'],
+                                    reason='start_wall',
+                                    cover_url=wall.get('cover_url'),
+                                    kind='auto',
+                                )
+                                if ok:
+                                    restrim_posted_start.add(tid)
+                            elif age >= RESTRIM_VK_FALLBACK_SEC:
+                                ok = await post_vk_live_link(
+                                    context,
+                                    VK_GROUP_PAGE_URL,
+                                    reason='start_fallback',
+                                    kind='auto',
+                                )
+                                if ok:
+                                    restrim_posted_start.add(tid)
+                            else:
+                                logger.info(
+                                    'restrim %s VK wall not ready, retry (age=%.0fs)',
+                                    tid,
+                                    age,
+                                )
+                        continue
+
+                    # остальные слоты: галочка и статичная ссылка
                     if not t.get('tg_notify'):
                         continue
                     if not t.get('link_url'):
                         continue
-
-                    age = now - restrim_seen_since[tid]
 
                     # --- A: пост через 4 мин после старта рестрима ---
                     if age >= RESTRIM_POST_DELAY_SEC and tid not in restrim_posted_start:
@@ -517,6 +872,7 @@ def main():
         app = builder.build()
 
         app.add_handler(CommandHandler("radio", radio))
+        app.add_handler(CommandHandler("vk", cmd_vk))
         app.add_handler(CommandHandler("start", start))
 
         app.job_queue.run_repeating(monitor_events, interval=60, first=10)
